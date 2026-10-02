@@ -2,6 +2,7 @@ package deployment
 
 import (
 	"context"
+	"encoding/json"
 
 	"github.com/mcpdev80/baseharbor-node-connector/internal/runtime/compose"
 	"github.com/mcpdev80/baseharbor-node-connector/internal/runtime/container"
@@ -39,6 +40,13 @@ type QuadletRealizer interface {
 // Observation keeps inventory/inspect/log/exec concerns separate from realization.
 type Observation interface {
 	List(ctx context.Context) ([]container.Resource, error)
+	Inspect(ctx context.Context, resourceID string) (json.RawMessage, error)
 	Logs(ctx context.Context, resourceID string, options container.LogOptions) (string, error)
 	Exec(ctx context.Context, resourceID string, request container.ExecRequest) (container.ExecResult, error)
+}
+
+type ResourceInventory interface {
+	Images(ctx context.Context) ([]container.Image, error)
+	Volumes(ctx context.Context) ([]container.Volume, error)
+	Networks(ctx context.Context) ([]container.Network, error)
 }
