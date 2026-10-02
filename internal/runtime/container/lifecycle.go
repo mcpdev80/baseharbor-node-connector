@@ -61,8 +61,11 @@ func (l *Lifecycle) Remove(ctx context.Context, id string, force bool) error {
 }
 
 func (l *Lifecycle) PullImage(ctx context.Context, reference string) error {
+	if hasControlCharacter(reference) {
+		return fmt.Errorf("invalid image reference")
+	}
 	reference = strings.TrimSpace(reference)
-	if reference == "" || strings.ContainsAny(reference, "\x00\r\n") {
+	if reference == "" {
 		return fmt.Errorf("invalid image reference")
 	}
 	return l.run(ctx, "pull", reference)
@@ -91,11 +94,12 @@ func (l *Lifecycle) EnsureNetwork(ctx context.Context, name, driver string) erro
 	if err := validateResourceName(name); err != nil {
 		return err
 	}
+	if hasControlCharacter(driver) {
+		return fmt.Errorf("invalid network driver")
+	}
+	driver = strings.TrimSpace(driver)
 	args := []string{"network", "create"}
-	if strings.TrimSpace(driver) != "" {
-		if strings.ContainsAny(driver, "\x00\r\n") {
-			return fmt.Errorf("invalid network driver")
-		}
+	if driver != "" {
 		args = append(args, "--driver", driver)
 	}
 	args = append(args, name)
@@ -110,8 +114,11 @@ func (l *Lifecycle) RemoveNetwork(ctx context.Context, id string) error {
 }
 
 func validateResourceName(name string) error {
+	if hasControlCharacter(name) {
+		return fmt.Errorf("invalid resource name")
+	}
 	name = strings.TrimSpace(name)
-	if name == "" || strings.ContainsAny(name, "/\\\x00\r\n") {
+	if name == "" || strings.Contains(name, "/") || strings.Contains(name, "\\") {
 		return fmt.Errorf("invalid resource name")
 	}
 	return nil
