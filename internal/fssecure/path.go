@@ -62,5 +62,5 @@ func within(root, candidate string) bool {
 	if err != nil {
 		return false
 	}
-	return rel != ".." && rel != "." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
+	return rel == "." || (rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)))
 }
