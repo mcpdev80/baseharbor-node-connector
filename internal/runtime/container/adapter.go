@@ -198,12 +198,21 @@ func (a *Adapter) Exec(ctx context.Context, id string, request ExecRequest) (Exe
 }
 
 func validateResourceID(id string) error {
+	if hasControlCharacter(id) {
+		return fmt.Errorf("invalid resource id")
+	}
 	id = strings.TrimSpace(id)
 	if id == "" {
 		return fmt.Errorf("resource id is required")
 	}
-	if strings.ContainsAny(id, "\x00\r\n") {
-		return fmt.Errorf("invalid resource id")
-	}
 	return nil
+}
+
+func hasControlCharacter(value string) bool {
+	for _, r := range value {
+		if r == 0 || r == '\r' || r == '\n' {
+			return true
+		}
+	}
+	return false
 }
