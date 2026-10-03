@@ -35,8 +35,8 @@ func InstallEnrollment(files TLSFiles, response EnrollmentResponse, now time.Tim
 		verifyTime = time.Now().UTC()
 	}
 	if _, err := cert.Verify(x509.VerifyOptions{
-		Roots: roots,
-		KeyUsages: []x509.ExtKeyUsage{x509.ExtKeyUsageAny},
+		Roots:       roots,
+		KeyUsages:   []x509.ExtKeyUsage{x509.ExtKeyUsageAny},
 		CurrentTime: verifyTime,
 	}); err != nil {
 		return fmt.Errorf("verify enrollment certificate chain: %w", err)
