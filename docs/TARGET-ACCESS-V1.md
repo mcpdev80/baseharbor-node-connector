@@ -223,3 +223,40 @@ terminal sessions:
 
 This does not yet select the concrete network framing or implement the session
 transport.
+
+
+## mTLS session core
+
+The connector now provides a concrete authenticated session core over an
+already-established `net.Conn`.
+
+The session:
+
+- upgrades the connection to TLS 1.3 mutual authentication;
+- verifies the certificate chain and configured peer URI/DNS SAN;
+- binds the remote `Hello.node.identity` to the authenticated certificate identity;
+- negotiates Target Access contract/protocol versions only after mTLS succeeds;
+- uses bounded length-prefixed JSON frames;
+- rejects oversized/zero-length frames;
+- uses complete writes and strict unknown-field decoding;
+- carries requests, responses and dedicated stream frames.
+
+Connection establishment/direction remains separate. The same session can be
+used on an inbound listener or an outbound-initiated tunnel without changing
+the Target Access semantic contract.
+
+`connector.capabilities` is an authenticated typed operation and returns the
+actual runtime capability projection after session establishment.
+
+## Identity renewal installation
+
+Enrollment/renewal installation additionally:
+
+- verifies the enrolled certificate SAN identity;
+- proves the certificate public key matches the local private key;
+- verifies the new certificate against the supplied trust bundle;
+- refuses response expiry beyond certificate validity;
+- atomically replaces certificate/trust files;
+- rejects symlinked identity directories.
+
+Private key material remains local throughout enrollment and renewal.
