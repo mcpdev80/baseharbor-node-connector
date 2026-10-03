@@ -50,11 +50,12 @@ func (r EnrollmentRequest) Validate() error {
 }
 
 type EnrollmentResponse struct {
-	ContractVersion string    `json:"contract_version"`
+	ContractVersion string       `json:"contract_version"`
 	Node             NodeIdentity `json:"node"`
-	CertificatePEM   string    `json:"certificate_pem"`
-	TrustBundlePEM   string    `json:"trust_bundle_pem"`
-	NotAfter         time.Time `json:"not_after"`
+	CertificatePEM   string       `json:"certificate_pem"`
+	TrustBundlePEM   string       `json:"trust_bundle_pem"`
+	Nonce            string       `json:"nonce,omitempty"`
+	NotAfter         time.Time    `json:"not_after"`
 }
 
 func (r EnrollmentResponse) Validate(now time.Time) error {
