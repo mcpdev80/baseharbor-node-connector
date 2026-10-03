@@ -16,10 +16,10 @@ func TestStreamReplayRegistryReplaysAfterCursorAndBoundsHistory(t *testing.T) {
 		registry.append(targetaccess.StreamEvent{
 			ContractVersion: targetaccess.ContractVersion,
 			ProtocolVersion: targetaccess.ProtocolVersion,
-			StreamID: "stream-a",
-			Sequence: sequence,
-			ObservedAt: time.Now().UTC(),
-			Type: targetaccess.StreamData,
+			StreamID:        "stream-a",
+			Sequence:        sequence,
+			ObservedAt:      time.Now().UTC(),
+			Type:            targetaccess.StreamData,
 		})
 	}
 	events, closed, err := registry.replay("stream-a", 3)
@@ -45,10 +45,10 @@ func TestStreamReplayRegistryMarksTerminalEventsClosed(t *testing.T) {
 	registry.append(targetaccess.StreamEvent{
 		ContractVersion: targetaccess.ContractVersion,
 		ProtocolVersion: targetaccess.ProtocolVersion,
-		StreamID: "stream-a",
-		Sequence: 1,
-		ObservedAt: time.Now().UTC(),
-		Type: targetaccess.StreamEnd,
+		StreamID:        "stream-a",
+		Sequence:        1,
+		ObservedAt:      time.Now().UTC(),
+		Type:            targetaccess.StreamEnd,
 	})
 	events, closed, err := registry.replay("stream-a", 0)
 	if err != nil {
@@ -67,10 +67,10 @@ func TestStreamReplayResumeRequiresDetachedTransport(t *testing.T) {
 	registry.append(targetaccess.StreamEvent{
 		ContractVersion: targetaccess.ContractVersion,
 		ProtocolVersion: targetaccess.ProtocolVersion,
-		StreamID: "stream-a",
-		Sequence: 1,
-		ObservedAt: time.Now().UTC(),
-		Type: targetaccess.StreamData,
+		StreamID:        "stream-a",
+		Sequence:        1,
+		ObservedAt:      time.Now().UTC(),
+		Type:            targetaccess.StreamData,
 	})
 	if _, _, err := registry.resume("stream-a", 1); err == nil {
 		t.Fatal("active stream unexpectedly allowed second attachment")
