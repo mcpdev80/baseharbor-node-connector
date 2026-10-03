@@ -1,7 +1,17 @@
 package capability
 
+import goruntime "runtime"
+
 func ForRuntime(runtime string) []Descriptor {
 	result := Baseline()
+	if goruntime.GOOS == "windows" {
+		for i := range result {
+			if result[i].Name == Terminal {
+				result[i].Available = false
+				result[i].Detail = "PTY terminal sessions are unsupported on Windows"
+			}
+		}
+	}
 	if runtime != "podman" {
 		for i := range result {
 			switch result[i].Name {
