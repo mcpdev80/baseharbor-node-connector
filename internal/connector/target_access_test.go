@@ -10,7 +10,7 @@ import (
 
 func TestTargetAccessCapabilitiesAreBoundToNodeAndRuntime(t *testing.T) {
 	service := &Service{
-		Runtime: bhruntime.Detection{Kind: bhruntime.Docker, Version: "test"},
+		Runtime:      bhruntime.Detection{Kind: bhruntime.Docker, Version: "test"},
 		Capabilities: capability.ForRuntime("docker"),
 	}
 	access, err := service.TargetAccess(targetaccess.NodeIdentity{
@@ -41,7 +41,7 @@ func TestTargetAccessCapabilitiesAreBoundToNodeAndRuntime(t *testing.T) {
 
 func TestTargetAccessRejectsRuntimeIdentityMismatch(t *testing.T) {
 	service := &Service{
-		Runtime: bhruntime.Detection{Kind: bhruntime.Docker},
+		Runtime:      bhruntime.Detection{Kind: bhruntime.Docker},
 		Capabilities: capability.ForRuntime("docker"),
 	}
 	_, err := service.TargetAccess(targetaccess.NodeIdentity{
@@ -55,7 +55,7 @@ func TestTargetAccessRejectsRuntimeIdentityMismatch(t *testing.T) {
 
 func TestTargetAccessOperationAvailabilityUsesNegotiatedCapabilities(t *testing.T) {
 	service := &Service{
-		Runtime: bhruntime.Detection{Kind: bhruntime.Docker},
+		Runtime:      bhruntime.Detection{Kind: bhruntime.Docker},
 		Capabilities: capability.ForRuntime("docker"),
 	}
 	access, err := service.TargetAccess(targetaccess.NodeIdentity{
