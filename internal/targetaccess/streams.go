@@ -15,22 +15,22 @@ const (
 )
 
 type StreamOpen struct {
-	ContractVersion string     `json:"contract_version"`
-	ProtocolVersion string     `json:"protocol_version"`
-	StreamID        string     `json:"stream_id"`
-	CorrelationID   string     `json:"correlation_id,omitempty"`
-	TargetID        string     `json:"target_id"`
-	ResourceID      string     `json:"resource_id"`
-	Kind            StreamKind `json:"kind"`
-	ResumeAfter     uint64     `json:"resume_after,omitempty"`
-	Logs            *LogStreamOptions `json:"logs,omitempty"`
+	ContractVersion string                 `json:"contract_version"`
+	ProtocolVersion string                 `json:"protocol_version"`
+	StreamID        string                 `json:"stream_id"`
+	CorrelationID   string                 `json:"correlation_id,omitempty"`
+	TargetID        string                 `json:"target_id"`
+	ResourceID      string                 `json:"resource_id"`
+	Kind            StreamKind             `json:"kind"`
+	ResumeAfter     uint64                 `json:"resume_after,omitempty"`
+	Logs            *LogStreamOptions      `json:"logs,omitempty"`
 	Terminal        *TerminalStreamOptions `json:"terminal,omitempty"`
 }
 
 type LogStreamOptions struct {
-	Tail  int    `json:"tail,omitempty"`
-	Since string `json:"since,omitempty"`
-	Follow bool  `json:"follow,omitempty"`
+	Tail   int    `json:"tail,omitempty"`
+	Since  string `json:"since,omitempty"`
+	Follow bool   `json:"follow,omitempty"`
 }
 
 type TerminalStreamOptions struct {
@@ -47,8 +47,8 @@ func (o StreamOpen) Validate() error {
 		return errors.New("unsupported stream contract/protocol version")
 	}
 	for name, value := range map[string]string{
-		"stream_id": o.StreamID,
-		"target_id": o.TargetID,
+		"stream_id":   o.StreamID,
+		"target_id":   o.TargetID,
 		"resource_id": o.ResourceID,
 	} {
 		if strings.TrimSpace(value) == "" {
