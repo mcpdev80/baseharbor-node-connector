@@ -155,7 +155,7 @@ Target Access v1 does not yet define:
 - artifact bundle upload framing;
 - log stream framing;
 - PTY stream framing;
-- reconnect/resume replay buffering across disconnected sessions.
+- listener/dialer ownership and bootstrap CA policy.
 
 Listener/dialer ownership and bootstrap CA policy remain separate from the
 Target Access semantic contract. They can evolve without reopening Runtime
@@ -232,9 +232,17 @@ live output. Terminal streams use a real Unix PTY around bounded
 resize events are resource-scoped, and process termination returns a structured
 exit event. Windows advertises terminal capability as unavailable.
 
-`resume_after` remains reserved by the v1 stream contract, but current live
-stream handlers fail closed when it is non-zero. Cross-connection replay is
-therefore still pending rather than silently pretending to resume.
+`resume_after` is implemented for log streams with a bounded in-memory replay
+window. A reconnect first replays retained events after the supplied sequence
+and then restarts runtime log following with a five-second time overlap from
+the last observed event. This provides at-least-once delivery: duplicate log
+records are possible across reconnect, but gaps are avoided where the runtime
+retains those logs. Expired cursors fail closed.
+
+Live PTY sessions deliberately cannot be reattached after transport loss.
+Interactive terminal state is terminated rather than silently attaching a new
+client to an unknown process state. This is the v1 resume policy for terminal
+streams.
 
 
 ## mTLS session core
