@@ -3,7 +3,10 @@ package targetaccess
 import (
 	"crypto/tls"
 	"crypto/x509"
+	"math/big"
 	"net/url"
+	"os"
+	"path/filepath"
 	"testing"
 )
 
@@ -43,5 +46,24 @@ func TestTLSFilesRequireExplicitPeerIdentityAndTLS13(t *testing.T) {
 	}
 	if cfg.MinVersion != tls.VersionTLS13 {
 		t.Fatalf("minimum TLS version = %#x, want TLS 1.3", cfg.MinVersion)
+	}
+}
+
+func TestTLSFilesRejectRevokedSerialFromReloadableFile(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "revoked.txt")
+	if err := os.WriteFile(path, []byte("2a\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	files := TLSFiles{RevokedSerialsFile: path}
+	cert := &x509.Certificate{SerialNumber: big.NewInt(0x2a)}
+	if err := files.verifyNotRevoked(cert); err == nil {
+		t.Fatal("revoked certificate unexpectedly accepted")
+	}
+
+	if err := os.WriteFile(path, []byte("# rotated revocation set\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := files.verifyNotRevoked(cert); err != nil {
+		t.Fatalf("reloaded revocation file did not take effect: %v", err)
 	}
 }
