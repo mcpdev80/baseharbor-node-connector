@@ -122,6 +122,45 @@ func (s *Session) ReadRequest(request *Request) error {
 	return nil
 }
 
+type InboundFrame struct {
+	Request    *Request
+	StreamOpen *StreamOpen
+}
+
+func (s *Session) ReadInboundFrame() (InboundFrame, error) {
+	data, err := s.readFrame()
+	if err != nil {
+		return InboundFrame{}, err
+	}
+	var shape map[string]json.RawMessage
+	if err := json.Unmarshal(data, &shape); err != nil {
+		return InboundFrame{}, err
+	}
+	_, hasOperation := shape["operation"]
+	_, hasStreamKind := shape["kind"]
+	if hasOperation == hasStreamKind {
+		return InboundFrame{}, errors.New("target-access inbound frame is ambiguous or unsupported")
+	}
+	if hasOperation {
+		var request Request
+		if err := decodeStrictFrame(data, &request); err != nil {
+			return InboundFrame{}, err
+		}
+		if request.ContractVersion != s.Negotiated.ContractVersion || request.ProtocolVersion != s.Negotiated.ProtocolVersion {
+			return InboundFrame{}, errors.New("request version does not match negotiated target-access session")
+		}
+		return InboundFrame{Request: &request}, nil
+	}
+	var open StreamOpen
+	if err := decodeStrictFrame(data, &open); err != nil {
+		return InboundFrame{}, err
+	}
+	if err := open.Validate(); err != nil {
+		return InboundFrame{}, err
+	}
+	return InboundFrame{StreamOpen: &open}, nil
+}
+
 func (s *Session) WriteResponse(response Response) error {
 	if response.ContractVersion != s.Negotiated.ContractVersion || response.ProtocolVersion != s.Negotiated.ProtocolVersion {
 		return errors.New("response version does not match negotiated target-access session")
@@ -202,22 +241,37 @@ func (s *Session) writeJSON(value any) error {
 }
 
 func (s *Session) readJSON(target any) error {
+	data, err := s.readFrame()
+	if err != nil {
+		return err
+	}
+	return decodeStrictFrame(data, target)
+}
+
+func (s *Session) readFrame() ([]byte, error) {
 	var header [4]byte
 	if _, err := io.ReadFull(s.reader, header[:]); err != nil {
-		return err
+		return nil, err
 	}
 	size := binary.BigEndian.Uint32(header[:])
 	if size == 0 || size > s.maxFrame {
-		return fmt.Errorf("invalid target-access frame size %d", size)
+		return nil, fmt.Errorf("invalid target-access frame size %d", size)
 	}
 	data := make([]byte, size)
 	if _, err := io.ReadFull(s.reader, data); err != nil {
-		return err
+		return nil, err
 	}
+	return data, nil
+}
+
+func decodeStrictFrame(data []byte, target any) error {
 	decoder := json.NewDecoder(bytes.NewReader(data))
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(target); err != nil {
 		return err
+	}
+	if decoder.More() {
+		return errors.New("target-access frame contains trailing JSON values")
 	}
 	return nil
 }
