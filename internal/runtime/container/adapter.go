@@ -210,8 +210,8 @@ func (a *Adapter) Exec(ctx context.Context, id string, request ExecRequest) (Exe
 
 	result, err := a.runner.Run(execCtx, nil, command, args...)
 	response := ExecResult{
-		Stdout: result.Stdout,
-		Stderr: result.Stderr,
+		Stdout:   result.Stdout,
+		Stderr:   result.Stderr,
 		ExitCode: result.ExitCode,
 	}
 	if err != nil {
