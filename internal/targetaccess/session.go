@@ -270,8 +270,12 @@ func decodeStrictFrame(data []byte, target any) error {
 	if err := decoder.Decode(target); err != nil {
 		return err
 	}
-	if decoder.More() {
-		return errors.New("target-access frame contains trailing JSON values")
+	var trailing any
+	if err := decoder.Decode(&trailing); !errors.Is(err, io.EOF) {
+		if err == nil {
+			return errors.New("target-access frame contains trailing JSON values")
+		}
+		return err
 	}
 	return nil
 }
