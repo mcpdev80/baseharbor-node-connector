@@ -66,8 +66,10 @@ const (
 	OpImagePull        Operation = "runtime.image.pull"
 	OpVolumeList       Operation = "runtime.volume.list"
 	OpVolumeEnsure     Operation = "runtime.volume.ensure"
+	OpVolumeRemove     Operation = "runtime.volume.remove"
 	OpNetworkList      Operation = "runtime.network.list"
 	OpNetworkEnsure    Operation = "runtime.network.ensure"
+	OpNetworkRemove    Operation = "runtime.network.remove"
 	OpContainerStart   Operation = "runtime.container.start"
 	OpContainerStop    Operation = "runtime.container.stop"
 	OpContainerRestart Operation = "runtime.container.restart"
@@ -76,6 +78,8 @@ const (
 	OpComposeDestroy   Operation = "runtime.compose.destroy"
 	OpQuadletApply     Operation = "runtime.quadlet.apply"
 	OpQuadletRemove    Operation = "runtime.quadlet.remove"
+	OpQuadletEnable    Operation = "runtime.quadlet.enable"
+	OpQuadletDisable   Operation = "runtime.quadlet.disable"
 	OpLogRead          Operation = "runtime.logs.read"
 	OpExec             Operation = "runtime.exec"
 	OpMetrics          Operation = "runtime.metrics"
@@ -84,10 +88,11 @@ const (
 
 var allowedOperations = map[Operation]struct{}{
 	OpRuntimeDetect: {}, OpResourceList: {}, OpResourceInspect: {},
-	OpImageList: {}, OpImagePull: {}, OpVolumeList: {}, OpVolumeEnsure: {},
-	OpNetworkList: {}, OpNetworkEnsure: {}, OpContainerStart: {}, OpContainerStop: {},
+	OpImageList: {}, OpImagePull: {}, OpVolumeList: {}, OpVolumeEnsure: {}, OpVolumeRemove: {},
+	OpNetworkList: {}, OpNetworkEnsure: {}, OpNetworkRemove: {}, OpContainerStart: {}, OpContainerStop: {},
 	OpContainerRestart: {}, OpContainerRemove: {}, OpComposeApply: {}, OpComposeDestroy: {},
-	OpQuadletApply: {}, OpQuadletRemove: {}, OpLogRead: {}, OpExec: {}, OpMetrics: {}, OpHealth: {},
+	OpQuadletApply: {}, OpQuadletRemove: {}, OpQuadletEnable: {}, OpQuadletDisable: {},
+	OpLogRead: {}, OpExec: {}, OpMetrics: {}, OpHealth: {},
 }
 
 func (o Operation) Validate() error {
