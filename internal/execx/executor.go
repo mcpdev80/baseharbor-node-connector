@@ -70,9 +70,8 @@ func (Runner) Stream(ctx context.Context, env map[string]string, name string, ar
 		if strings.TrimSpace(key) == "" ||
 			strings.Contains(key, "=") ||
 			strings.ContainsRune(key, rune(0)) ||
-			strings.ContainsRune(key, '') ||
-			strings.ContainsRune(key, '
-') {
+			strings.ContainsRune(key, rune(13)) ||
+			strings.ContainsRune(key, rune(10)) {
 			return nil, fmt.Errorf("invalid environment key")
 		}
 		cmd.Env = append(cmd.Env, key+"="+value)
