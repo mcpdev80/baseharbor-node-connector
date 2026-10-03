@@ -68,3 +68,28 @@ func TestExistingRejectsSymlinkEscape(t *testing.T) {
 		t.Fatal("expected symlink escape to be rejected")
 	}
 }
+
+func TestWriteFileRejectsSymlinkParentEscape(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("symlink semantics differ on Windows")
+	}
+	parent := t.TempDir()
+	rootDir := filepath.Join(parent, "stage")
+	outside := filepath.Join(parent, "outside")
+	if err := os.MkdirAll(rootDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(outside, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(outside, filepath.Join(rootDir, "escape")); err != nil {
+		t.Fatal(err)
+	}
+	root, err := OpenRoot(rootDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := root.WriteFile(filepath.Join("escape", "payload.txt"), []byte("x"), 0o600); err == nil {
+		t.Fatal("expected staged write through symlink parent to be rejected")
+	}
+}

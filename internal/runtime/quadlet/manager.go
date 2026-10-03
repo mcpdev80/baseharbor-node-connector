@@ -13,13 +13,13 @@ import (
 )
 
 var allowedExtensions = map[string]struct{}{
-	".build": {},
+	".build":     {},
 	".container": {},
-	".image": {},
-	".kube": {},
-	".network": {},
-	".pod": {},
-	".volume": {},
+	".image":     {},
+	".kube":      {},
+	".network":   {},
+	".pod":       {},
+	".volume":    {},
 }
 
 type Entry struct {
@@ -70,12 +70,12 @@ func (m *Manager) List(ctx context.Context) ([]Entry, error) {
 		}
 		unit := unitName(name)
 		result = append(result, Entry{
-			Name: name,
-			Path: filepath.Join(m.baseDir, name),
-			Kind: strings.TrimPrefix(strings.ToLower(filepath.Ext(name)), "."),
-			Unit: unit,
+			Name:    name,
+			Path:    filepath.Join(m.baseDir, name),
+			Kind:    strings.TrimPrefix(strings.ToLower(filepath.Ext(name)), "."),
+			Unit:    unit,
 			Enabled: m.state(ctx, "is-enabled", unit),
-			Active: m.state(ctx, "is-active", unit),
+			Active:  m.state(ctx, "is-active", unit),
 		})
 	}
 	sort.Slice(result, func(i, j int) bool { return result[i].Name < result[j].Name })

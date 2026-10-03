@@ -23,11 +23,11 @@ const (
 )
 
 type Event struct {
-	Type     EventType `json:"type"`
+	Type      EventType `json:"type"`
 	SessionID string    `json:"session_id,omitempty"`
-	Data     []byte    `json:"data,omitempty"`
-	Rows     int       `json:"rows,omitempty"`
-	Cols     int       `json:"cols,omitempty"`
-	ExitCode int       `json:"exit_code,omitempty"`
-	Message  string    `json:"message,omitempty"`
+	Data      []byte    `json:"data,omitempty"`
+	Rows      int       `json:"rows,omitempty"`
+	Cols      int       `json:"cols,omitempty"`
+	ExitCode  int       `json:"exit_code,omitempty"`
+	Message   string    `json:"message,omitempty"`
 }

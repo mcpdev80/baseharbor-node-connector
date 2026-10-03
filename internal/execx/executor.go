@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"strings"
@@ -57,4 +58,36 @@ func (Runner) Run(ctx context.Context, env map[string]string, name string, args 
 		return result, err
 	}
 	return result, nil
+}
+
+func (Runner) Stream(ctx context.Context, env map[string]string, name string, args ...string) (io.ReadCloser, error) {
+	if strings.TrimSpace(name) == "" {
+		return nil, fmt.Errorf("executable is required")
+	}
+	cmd := exec.CommandContext(ctx, name, args...)
+	cmd.Env = os.Environ()
+	for key, value := range env {
+		if strings.TrimSpace(key) == "" ||
+			strings.Contains(key, "=") ||
+			strings.ContainsRune(key, rune(0)) ||
+			strings.ContainsRune(key, rune(13)) ||
+			strings.ContainsRune(key, rune(10)) {
+			return nil, fmt.Errorf("invalid environment key")
+		}
+		cmd.Env = append(cmd.Env, key+"="+value)
+	}
+
+	reader, writer := io.Pipe()
+	cmd.Stdout = writer
+	cmd.Stderr = writer
+	if err := cmd.Start(); err != nil {
+		_ = reader.Close()
+		_ = writer.Close()
+		return nil, err
+	}
+	go func() {
+		err := cmd.Wait()
+		_ = writer.CloseWithError(err)
+	}()
+	return reader, nil
 }

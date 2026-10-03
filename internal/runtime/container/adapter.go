@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"strconv"
 	"strings"
 	"time"
@@ -105,6 +106,28 @@ func (a *Adapter) List(ctx context.Context) ([]Resource, error) {
 	return resources, nil
 }
 
+func (a *Adapter) LogStream(ctx context.Context, id string, options LogOptions, follow bool) (io.ReadCloser, error) {
+	if err := validateResourceID(id); err != nil {
+		return nil, err
+	}
+	command, err := a.command()
+	if err != nil {
+		return nil, err
+	}
+	args := []string{"logs"}
+	if options.Tail > 0 {
+		args = append(args, "--tail", strconv.Itoa(options.Tail))
+	}
+	if strings.TrimSpace(options.Since) != "" {
+		args = append(args, "--since", strings.TrimSpace(options.Since))
+	}
+	if follow {
+		args = append(args, "--follow")
+	}
+	args = append(args, id)
+	return a.runner.Stream(ctx, nil, command, args...)
+}
+
 func (a *Adapter) Logs(ctx context.Context, id string, options LogOptions) (string, error) {
 	if err := validateResourceID(id); err != nil {
 		return "", err
@@ -187,8 +210,8 @@ func (a *Adapter) Exec(ctx context.Context, id string, request ExecRequest) (Exe
 
 	result, err := a.runner.Run(execCtx, nil, command, args...)
 	response := ExecResult{
-		Stdout: result.Stdout,
-		Stderr: result.Stderr,
+		Stdout:   result.Stdout,
+		Stderr:   result.Stderr,
 		ExitCode: result.ExitCode,
 	}
 	if err != nil {

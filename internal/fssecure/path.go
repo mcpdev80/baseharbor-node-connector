@@ -64,3 +64,102 @@ func within(root, candidate string) bool {
 	}
 	return rel == "." || (rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)))
 }
+
+func (r *Root) WriteFile(path string, data []byte, mode os.FileMode) (string, error) {
+	clean, err := cleanRelative(path)
+	if err != nil {
+		return "", err
+	}
+	parentRel := filepath.Dir(clean)
+	parent, err := r.ensureDirectory(parentRel)
+	if err != nil {
+		return "", err
+	}
+	target := filepath.Join(parent, filepath.Base(clean))
+	if info, err := os.Lstat(target); err == nil && info.Mode()&os.ModeSymlink != 0 {
+		return "", fmt.Errorf("staged path is a symlink")
+	} else if err != nil && !os.IsNotExist(err) {
+		return "", err
+	}
+	if mode == 0 {
+		mode = 0o600
+	}
+	mode &= 0o700
+	tmp, err := os.CreateTemp(parent, ".baseharbor-stage-*")
+	if err != nil {
+		return "", err
+	}
+	tmpName := tmp.Name()
+	defer os.Remove(tmpName)
+	if err := tmp.Chmod(mode); err != nil {
+		_ = tmp.Close()
+		return "", err
+	}
+	if _, err := tmp.Write(data); err != nil {
+		_ = tmp.Close()
+		return "", err
+	}
+	if err := tmp.Sync(); err != nil {
+		_ = tmp.Close()
+		return "", err
+	}
+	if err := tmp.Close(); err != nil {
+		return "", err
+	}
+	if err := os.Rename(tmpName, target); err != nil {
+		return "", err
+	}
+	resolved, err := filepath.EvalSymlinks(target)
+	if err != nil {
+		return "", err
+	}
+	if !within(r.path, resolved) {
+		return "", fmt.Errorf("staged path escapes staging root")
+	}
+	return resolved, nil
+}
+
+func (r *Root) ensureDirectory(relative string) (string, error) {
+	if relative == "." || relative == "" {
+		return r.path, nil
+	}
+	clean, err := cleanRelative(relative)
+	if err != nil {
+		return "", err
+	}
+	current := r.path
+	for _, part := range strings.Split(clean, string(filepath.Separator)) {
+		current = filepath.Join(current, part)
+		info, err := os.Lstat(current)
+		switch {
+		case os.IsNotExist(err):
+			if err := os.Mkdir(current, 0o700); err != nil {
+				return "", err
+			}
+		case err != nil:
+			return "", err
+		case info.Mode()&os.ModeSymlink != 0:
+			return "", fmt.Errorf("staging directory contains symlink")
+		case !info.IsDir():
+			return "", fmt.Errorf("staging path component is not a directory")
+		}
+	}
+	return current, nil
+}
+
+func cleanRelative(path string) (string, error) {
+	if strings.TrimSpace(path) == "" {
+		return "", fmt.Errorf("path is required")
+	}
+	if filepath.IsAbs(path) {
+		return "", fmt.Errorf("absolute staged path is not allowed")
+	}
+	clean := filepath.Clean(path)
+	if clean == "." || clean == ".." || strings.HasPrefix(clean, ".."+string(filepath.Separator)) {
+		return "", fmt.Errorf("path escapes staging root")
+	}
+	if strings.ContainsRune(clean, '\x00') {
+		return "", fmt.Errorf("path contains NUL")
+	}
+	return clean, nil
+}
