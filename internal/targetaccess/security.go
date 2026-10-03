@@ -30,7 +30,7 @@ type TLSFiles struct {
 
 func (f TLSFiles) Validate() error {
 	for name, value := range map[string]string{
-		"certificate_file": f.CertificateFile,
+		"certificate_file":  f.CertificateFile,
 		"private_key_file":  f.PrivateKeyFile,
 		"trust_bundle_file": f.TrustBundleFile,
 	} {
