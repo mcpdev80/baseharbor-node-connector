@@ -58,3 +58,40 @@ func TestStreamReplayRegistryMarksTerminalEventsClosed(t *testing.T) {
 		t.Fatalf("unexpected closed replay state: closed=%v events=%#v", closed, events)
 	}
 }
+
+func TestStreamReplayResumeRequiresDetachedTransport(t *testing.T) {
+	registry := newStreamReplayRegistry(10)
+	if err := registry.begin("stream-a", false); err != nil {
+		t.Fatal(err)
+	}
+	registry.append(targetaccess.StreamEvent{
+		ContractVersion: targetaccess.ContractVersion,
+		ProtocolVersion: targetaccess.ProtocolVersion,
+		StreamID: "stream-a",
+		Sequence: 1,
+		ObservedAt: time.Now().UTC(),
+		Type: targetaccess.StreamData,
+	})
+	if _, _, err := registry.resume("stream-a", 1); err == nil {
+		t.Fatal("active stream unexpectedly allowed second attachment")
+	}
+	registry.detach("stream-a")
+	events, closed, err := registry.resume("stream-a", 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if closed || len(events) != 1 {
+		t.Fatalf("unexpected resumed state: closed=%v events=%#v", closed, events)
+	}
+}
+
+func TestTerminalReplayCannotReattachLivePTY(t *testing.T) {
+	registry := newStreamReplayRegistry(10)
+	if err := registry.begin("terminal-a", true); err != nil {
+		t.Fatal(err)
+	}
+	registry.detach("terminal-a")
+	if _, _, err := registry.resume("terminal-a", 0); err == nil {
+		t.Fatal("live PTY unexpectedly allowed reattachment")
+	}
+}
