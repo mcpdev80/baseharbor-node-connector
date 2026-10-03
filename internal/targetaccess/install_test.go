@@ -18,9 +18,9 @@ func TestInstallEnrollmentBindsCertificateToLocalPrivateKey(t *testing.T) {
 	}
 	dir := t.TempDir()
 	files := TLSFiles{
-		CertificateFile: filepath.Join(dir, "identity", "node.crt"),
-		PrivateKeyFile: node.keyPath,
-		TrustBundleFile: filepath.Join(dir, "identity", "ca.pem"),
+		CertificateFile:      filepath.Join(dir, "identity", "node.crt"),
+		PrivateKeyFile:       node.keyPath,
+		TrustBundleFile:      filepath.Join(dir, "identity", "ca.pem"),
 		ExpectedPeerIdentity: "spiffe://baseharbor/core/control-plane",
 	}
 	response := EnrollmentResponse{
@@ -31,7 +31,7 @@ func TestInstallEnrollmentBindsCertificateToLocalPrivateKey(t *testing.T) {
 		},
 		CertificatePEM: string(certPEM),
 		TrustBundlePEM: string(caPEM),
-		NotAfter: time.Now().Add(30 * time.Minute),
+		NotAfter:       time.Now().Add(30 * time.Minute),
 	}
 	if err := InstallEnrollment(files, response, time.Now()); err != nil {
 		t.Fatal(err)
