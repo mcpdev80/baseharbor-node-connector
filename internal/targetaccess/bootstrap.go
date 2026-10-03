@@ -81,14 +81,18 @@ func BootstrapEnroll(ctx context.Context, cfg BootstrapConfig, files TLSFiles, n
 	if err != nil {
 		return EnrollmentResponse{}, err
 	}
-	payload, err := json.Marshal(EnrollmentRequest{
+	enrollmentRequest := EnrollmentRequest{
 		ContractVersion: EnrollmentContractVersion,
 		NodeID: node.NodeID,
 		TargetID: node.TargetID,
 		Runtime: node.Runtime,
 		CSRPEM: csrPEM,
 		Nonce: nonce,
-	})
+	}
+	if err := enrollmentRequest.Validate(); err != nil {
+		return EnrollmentResponse{}, err
+	}
+	payload, err := json.Marshal(enrollmentRequest)
 	if err != nil {
 		return EnrollmentResponse{}, err
 	}
@@ -126,6 +130,13 @@ func BootstrapEnroll(ctx context.Context, cfg BootstrapConfig, files TLSFiles, n
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(&enrollment); err != nil {
 		return EnrollmentResponse{}, fmt.Errorf("decode bootstrap enrollment response: %w", err)
+	}
+	var trailing any
+	if err := decoder.Decode(&trailing); !errors.Is(err, io.EOF) {
+		if err == nil {
+			return EnrollmentResponse{}, errors.New("bootstrap enrollment response contains trailing JSON values")
+		}
+		return EnrollmentResponse{}, fmt.Errorf("decode trailing bootstrap enrollment response: %w", err)
 	}
 	if err := validateEnrollmentBinding(node, enrollment.Node); err != nil {
 		return EnrollmentResponse{}, err
@@ -169,6 +180,9 @@ func bootstrapHTTPClient(cfg BootstrapConfig) (*http.Client, error) {
 		Transport: &http.Transport{
 			TLSClientConfig: tlsConfig,
 			ForceAttemptHTTP2: true,
+		},
+		CheckRedirect: func(*http.Request, []*http.Request) error {
+			return http.ErrUseLastResponse
 		},
 	}, nil
 }
