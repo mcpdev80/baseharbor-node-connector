@@ -214,6 +214,12 @@ func (a *TargetAccess) execute(ctx context.Context, operation targetaccess.Opera
 		return nil, fmt.Errorf("runtime resource %q was not found", request.ResourceID)
 	case targetaccess.OpHealth:
 		return a.health.Snapshot(ctx), nil
+	case targetaccess.OpBundleStage:
+		var request targetaccess.Bundle
+		if err := decodePayload(payload, &request); err != nil {
+			return nil, err
+		}
+		return targetaccess.StageBundle(a.service.Staging, request)
 	default:
 		return nil, fmt.Errorf("unsupported target-access operation %q", operation)
 	}
