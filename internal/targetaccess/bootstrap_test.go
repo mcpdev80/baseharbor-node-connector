@@ -13,9 +13,9 @@ import (
 
 func TestBootstrapConfigRequiresHTTPSAndPinnedIdentity(t *testing.T) {
 	cfg := BootstrapConfig{
-		EnrollmentURL: "http://core.example/enroll",
-		TrustBundleFile: "ca.pem",
-		TokenFile: "token",
+		EnrollmentURL:          "http://core.example/enroll",
+		TrustBundleFile:        "ca.pem",
+		TokenFile:              "token",
 		ExpectedServerIdentity: "spiffe://baseharbor/core/bootstrap",
 	}
 	if err := cfg.Validate(); err == nil {
@@ -82,7 +82,7 @@ func TestCreateEnrollmentCSRBindsNodeURIIdentity(t *testing.T) {
 }
 
 func TestValidateEnrollmentBindingRejectsCrossTargetResponse(t *testing.T) {
-	expected := NodeIdentity{NodeID:"node-1", TargetID:"edge-a", Runtime:"docker", Identity:"spiffe://baseharbor/target/edge-a/node/node-1"}
+	expected := NodeIdentity{NodeID: "node-1", TargetID: "edge-a", Runtime: "docker", Identity: "spiffe://baseharbor/target/edge-a/node/node-1"}
 	actual := expected
 	actual.TargetID = "edge-b"
 	if err := validateEnrollmentBinding(expected, actual); err == nil || !strings.Contains(err.Error(), "does not match") {
