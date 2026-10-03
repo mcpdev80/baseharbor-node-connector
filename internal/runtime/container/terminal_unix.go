@@ -4,11 +4,13 @@ package container
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
 	"os/exec"
 	"strings"
+	"syscall"
 
 	"github.com/creack/pty"
 )
@@ -105,7 +107,11 @@ func (a *Adapter) StartTerminal(ctx context.Context, id string, request Terminal
 }
 
 func (s *TerminalSession) Read(p []byte) (int, error) {
-	return s.file.Read(p)
+	n, err := s.file.Read(p)
+	if errors.Is(err, syscall.EIO) {
+		return n, io.EOF
+	}
+	return n, err
 }
 
 func (s *TerminalSession) Write(p []byte) (int, error) {
