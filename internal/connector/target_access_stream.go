@@ -13,6 +13,27 @@ import (
 	"github.com/mcpdev80/baseharbor-node-connector/internal/targetaccess"
 )
 
+func (a *TargetAccess) ServeStream(ctx context.Context, session *targetaccess.Session) error {
+	if a == nil {
+		return errors.New("target access service is required")
+	}
+	if session == nil {
+		return errors.New("target access session is required")
+	}
+	var open targetaccess.StreamOpen
+	if err := session.ReadStreamOpen(&open); err != nil {
+		return err
+	}
+	switch open.Kind {
+	case targetaccess.StreamLogs:
+		return a.ServeLogStream(ctx, session, open)
+	case targetaccess.StreamTerminal:
+		return a.ServeTerminalStream(ctx, session, open)
+	default:
+		return errors.New("unsupported target access stream kind")
+	}
+}
+
 func (a *TargetAccess) ServeLogStream(ctx context.Context, session *targetaccess.Session, open targetaccess.StreamOpen) error {
 	if a == nil {
 		return errors.New("target access service is required")
