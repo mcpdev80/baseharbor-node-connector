@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"strconv"
 	"strings"
 	"time"
@@ -103,6 +104,28 @@ func (a *Adapter) List(ctx context.Context) ([]Resource, error) {
 		resources = append(resources, resource)
 	}
 	return resources, nil
+}
+
+func (a *Adapter) LogStream(ctx context.Context, id string, options LogOptions, follow bool) (io.ReadCloser, error) {
+	if err := validateResourceID(id); err != nil {
+		return nil, err
+	}
+	command, err := a.command()
+	if err != nil {
+		return nil, err
+	}
+	args := []string{"logs"}
+	if options.Tail > 0 {
+		args = append(args, "--tail", strconv.Itoa(options.Tail))
+	}
+	if strings.TrimSpace(options.Since) != "" {
+		args = append(args, "--since", strings.TrimSpace(options.Since))
+	}
+	if follow {
+		args = append(args, "--follow")
+	}
+	args = append(args, id)
+	return a.runner.Stream(ctx, nil, command, args...)
 }
 
 func (a *Adapter) Logs(ctx context.Context, id string, options LogOptions) (string, error) {
