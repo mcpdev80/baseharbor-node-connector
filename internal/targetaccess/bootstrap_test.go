@@ -89,3 +89,31 @@ func TestValidateEnrollmentBindingRejectsCrossTargetResponse(t *testing.T) {
 		t.Fatalf("cross-target enrollment response unexpectedly accepted: %v", err)
 	}
 }
+
+func TestEnsureEnrollmentPrivateKeyCreatesPrivateKeyOnce(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "identity", "node.key")
+	if err := EnsureEnrollmentPrivateKey(path); err != nil {
+		t.Fatal(err)
+	}
+	first, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Mode().Perm() != 0o600 {
+		t.Fatalf("private key mode = %o", info.Mode().Perm())
+	}
+	if err := EnsureEnrollmentPrivateKey(path); err != nil {
+		t.Fatal(err)
+	}
+	second, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(first) != string(second) {
+		t.Fatal("existing enrollment private key was replaced")
+	}
+}
