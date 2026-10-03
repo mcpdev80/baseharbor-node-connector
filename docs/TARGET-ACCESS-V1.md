@@ -158,3 +158,68 @@ Target Access v1 does not yet define:
 - reconnect/resume behavior.
 
 Those build on this contract without reopening Runtime Provider semantics.
+
+
+## Enrollment
+
+Enrollment is a separate transport-neutral contract:
+
+```text
+baseharbor.target-access-enrollment/v1
+```
+
+The connector generates its private key locally and sends only a signed PKCS#10
+CSR plus Node/Target/runtime identity and an anti-replay nonce.
+
+The enrollment response contains the assigned Node identity, certificate chain,
+trust bundle and certificate expiry. Private-key material is never returned by
+or embedded in the enrollment response.
+
+The bootstrap authentication mechanism and certificate authority remain outside
+Target Access v1 and may evolve independently.
+
+## Rotation and revocation
+
+Certificate, private-key and trust-bundle files are re-read for new TLS
+handshakes. A trust bundle may contain overlapping old/new roots during CA
+rotation.
+
+An optional reloadable revoked-serial file fails closed for explicitly revoked
+peer certificates. Certificate validity and chain verification are enforced by
+the X.509 verifier on every new connection.
+
+## Artifact bundles
+
+`artifact.bundle.stage` transfers a typed bundle into:
+
+```text
+<staging-root>/bundles/<bundle-id>/...
+```
+
+Each file requires a SHA-256 digest. Writes are atomic and reject:
+
+- absolute paths;
+- bundle-relative traversal;
+- traversal outside the staging root;
+- symlink parent components;
+- symlink target replacement;
+- duplicate logical paths;
+- hash mismatch.
+
+Compose realization continues to consume only staged paths.
+
+## Stream semantics
+
+Target Access v1 defines transport-neutral stream semantics for logs and
+terminal sessions:
+
+- stable stream IDs;
+- audit correlation IDs;
+- monotonically increasing event sequence;
+- resume cursor using the last accepted sequence;
+- typed ready/data/resize/exit/error/end events;
+- bounded log options;
+- terminal sessions require explicit argv and remain resource-scoped.
+
+This does not yet select the concrete network framing or implement the session
+transport.
