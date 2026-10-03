@@ -24,13 +24,13 @@ import (
 const maxEnrollmentResponseBytes = 1 << 20
 
 type BootstrapConfig struct {
-	EnrollmentURL           string
-	TrustBundleFile         string
-	TokenFile               string
-	ExpectedServerIdentity  string
-	ServerName              string
-	Timeout                 time.Duration
-	RetainBootstrapToken    bool
+	EnrollmentURL          string
+	TrustBundleFile        string
+	TokenFile              string
+	ExpectedServerIdentity string
+	ServerName             string
+	Timeout                time.Duration
+	RetainBootstrapToken   bool
 }
 
 func (c BootstrapConfig) Validate() error {
@@ -39,8 +39,8 @@ func (c BootstrapConfig) Validate() error {
 		return errors.New("enrollment_url must be an absolute HTTPS URL")
 	}
 	for name, value := range map[string]string{
-		"trust_bundle_file": c.TrustBundleFile,
-		"token_file": c.TokenFile,
+		"trust_bundle_file":        c.TrustBundleFile,
+		"token_file":               c.TokenFile,
 		"expected_server_identity": c.ExpectedServerIdentity,
 	} {
 		if strings.TrimSpace(value) == "" {
@@ -83,11 +83,11 @@ func BootstrapEnroll(ctx context.Context, cfg BootstrapConfig, files TLSFiles, n
 	}
 	enrollmentRequest := EnrollmentRequest{
 		ContractVersion: EnrollmentContractVersion,
-		NodeID: node.NodeID,
-		TargetID: node.TargetID,
-		Runtime: node.Runtime,
-		CSRPEM: csrPEM,
-		Nonce: nonce,
+		NodeID:          node.NodeID,
+		TargetID:        node.TargetID,
+		Runtime:         node.Runtime,
+		CSRPEM:          csrPEM,
+		Nonce:           nonce,
 	}
 	if err := enrollmentRequest.Validate(); err != nil {
 		return EnrollmentResponse{}, err
@@ -163,7 +163,7 @@ func bootstrapHTTPClient(cfg BootstrapConfig) (*http.Client, error) {
 	tlsConfig := &tls.Config{
 		MinVersion: tls.VersionTLS13,
 		ServerName: strings.TrimSpace(cfg.ServerName),
-		RootCAs: roots,
+		RootCAs:    roots,
 	}
 	tlsConfig.VerifyConnection = func(state tls.ConnectionState) error {
 		if len(state.PeerCertificates) == 0 {
@@ -178,7 +178,7 @@ func bootstrapHTTPClient(cfg BootstrapConfig) (*http.Client, error) {
 	return &http.Client{
 		Timeout: timeout,
 		Transport: &http.Transport{
-			TLSClientConfig: tlsConfig,
+			TLSClientConfig:   tlsConfig,
 			ForceAttemptHTTP2: true,
 		},
 		CheckRedirect: func(*http.Request, []*http.Request) error {
