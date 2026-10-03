@@ -1,8 +1,8 @@
 package main
 
 import (
-	"github.com/mcpdev80/baseharbor-node-connector/internal/targetaccess"
 	"bytes"
+	"github.com/mcpdev80/baseharbor-node-connector/internal/targetaccess"
 	"os"
 	"path/filepath"
 	"strings"
@@ -74,7 +74,7 @@ func TestNeedsEnrollmentRequiresAllIdentityMaterial(t *testing.T) {
 func testTLSFiles(files []string) targetaccess.TLSFiles {
 	return targetaccess.TLSFiles{
 		CertificateFile: files[0],
-		PrivateKeyFile: files[1],
+		PrivateKeyFile:  files[1],
 		TrustBundleFile: files[2],
 	}
 }
