@@ -26,8 +26,23 @@ func InstallEnrollment(files TLSFiles, response EnrollmentResponse, now time.Tim
 	if err := certificateMatchesPrivateKey(cert, files.PrivateKeyFile); err != nil {
 		return err
 	}
-	if _, err := parseCertPool([]byte(response.TrustBundlePEM)); err != nil {
+	roots, err := parseCertPool([]byte(response.TrustBundlePEM))
+	if err != nil {
 		return fmt.Errorf("parse enrollment trust bundle: %w", err)
+	}
+	verifyTime := now
+	if verifyTime.IsZero() {
+		verifyTime = time.Now().UTC()
+	}
+	if _, err := cert.Verify(x509.VerifyOptions{
+		Roots: roots,
+		KeyUsages: []x509.ExtKeyUsage{x509.ExtKeyUsageAny},
+		CurrentTime: verifyTime,
+	}); err != nil {
+		return fmt.Errorf("verify enrollment certificate chain: %w", err)
+	}
+	if response.NotAfter.After(cert.NotAfter) {
+		return errors.New("enrollment response expiry exceeds certificate validity")
 	}
 	if err := atomicWriteFile(files.CertificateFile, []byte(response.CertificatePEM), 0o600); err != nil {
 		return fmt.Errorf("install enrollment certificate: %w", err)
@@ -125,7 +140,18 @@ func atomicWriteFile(path string, data []byte, mode os.FileMode) error {
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return err
 	}
-	tmp, err := os.CreateTemp(dir, ".baseharbor-identity-*")
+	absDir, err := filepath.Abs(dir)
+	if err != nil {
+		return err
+	}
+	resolvedDir, err := filepath.EvalSymlinks(absDir)
+	if err != nil {
+		return err
+	}
+	if resolvedDir != absDir {
+		return errors.New("identity directory must not contain symlinks")
+	}
+	tmp, err := os.CreateTemp(absDir, ".baseharbor-identity-*")
 	if err != nil {
 		return err
 	}
