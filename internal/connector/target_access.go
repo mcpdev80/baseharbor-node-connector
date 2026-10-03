@@ -75,13 +75,7 @@ func (a *TargetAccess) operationAvailable(operation targetaccess.Operation) bool
 			return descriptor.Available
 		}
 	}
-	switch operation {
-	case targetaccess.OpVolumeRemove, targetaccess.OpNetworkRemove,
-		targetaccess.OpQuadletEnable, targetaccess.OpQuadletDisable:
-		return true
-	default:
-		return false
-	}
+	return false
 }
 
 func (a *TargetAccess) execute(ctx context.Context, operation targetaccess.Operation, payload json.RawMessage) (any, error) {
