@@ -49,9 +49,13 @@ func StageBundle(root *fssecure.Root, bundle Bundle) (StagedBundle, error) {
 	result := StagedBundle{BundleID: bundleID}
 	seen := map[string]struct{}{}
 	for _, file := range bundle.Files {
-		path := filepath.Clean(strings.TrimSpace(file.Path))
-		if path == "." || path == "" {
-			return StagedBundle{}, errors.New("bundle file path is required")
+		rawPath := strings.TrimSpace(file.Path)
+		if rawPath == "" || filepath.IsAbs(rawPath) {
+			return StagedBundle{}, errors.New("bundle file path must be relative")
+		}
+		path := filepath.Clean(rawPath)
+		if path == "." || path == ".." || strings.HasPrefix(path, ".."+string(filepath.Separator)) {
+			return StagedBundle{}, errors.New("bundle file path escapes bundle root")
 		}
 		if _, exists := seen[path]; exists {
 			return StagedBundle{}, fmt.Errorf("duplicate bundle file path %q", path)
