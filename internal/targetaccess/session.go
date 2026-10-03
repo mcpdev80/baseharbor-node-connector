@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"strings"
 	"sync"
 )
 
@@ -64,6 +65,10 @@ func OpenSession(
 	if err != nil {
 		_ = secured.Close()
 		return nil, err
+	}
+	if strings.TrimSpace(remote.Node.Identity) != strings.TrimSpace(files.ExpectedPeerIdentity) {
+		_ = secured.Close()
+		return nil, errors.New("target-access hello identity does not match authenticated TLS peer identity")
 	}
 	negotiated, err := Negotiate(local, remote)
 	if err != nil {
