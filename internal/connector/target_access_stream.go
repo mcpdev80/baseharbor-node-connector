@@ -89,7 +89,7 @@ func (a *TargetAccess) ServeLogStream(ctx context.Context, session *targetaccess
 	}()
 
 	reader, err := a.service.Observation.LogStream(ctx, open.ResourceID, container.LogOptions{
-		Tail: open.Logs.Tail,
+		Tail:  open.Logs.Tail,
 		Since: since,
 	}, open.Logs.Follow)
 	if err != nil {
@@ -156,16 +156,15 @@ func streamEvent(open targetaccess.StreamOpen, sequence uint64, kind targetacces
 	return targetaccess.StreamEvent{
 		ContractVersion: targetaccess.ContractVersion,
 		ProtocolVersion: targetaccess.ProtocolVersion,
-		StreamID: open.StreamID,
-		CorrelationID: open.CorrelationID,
-		Sequence: sequence,
-		ObservedAt: time.Now().UTC(),
-		Type: kind,
-		Data: data,
-		Message: message,
+		StreamID:        open.StreamID,
+		CorrelationID:   open.CorrelationID,
+		Sequence:        sequence,
+		ObservedAt:      time.Now().UTC(),
+		Type:            kind,
+		Data:            data,
+		Message:         message,
 	}
 }
-
 
 func (a *TargetAccess) ServeTerminalStream(ctx context.Context, session *targetaccess.Session, open targetaccess.StreamOpen) error {
 	if a == nil {
