@@ -24,24 +24,24 @@ const defaultCoreIdentity = "spiffe://baseharbor/core/control-plane"
 var identitySegment = regexp.MustCompile(`^[A-Za-z0-9._-]+$`)
 
 type appConfig struct {
-	CoreAddress       string
-	ServerName        string
-	CoreIdentity      string
-	TargetID          string
-	NodeID            string
-	NodeIdentity      string
-	StateRoot         string
-	StagingRoot       string
-	QuadletRoot       string
-	CertificateFile   string
-	PrivateKeyFile    string
-	TrustBundleFile   string
-	RevokedSerials    string
-	BootstrapURL      string
-	BootstrapCA       string
-	BootstrapToken    string
-	RetainToken       bool
-	Sessions          int
+	CoreAddress     string
+	ServerName      string
+	CoreIdentity    string
+	TargetID        string
+	NodeID          string
+	NodeIdentity    string
+	StateRoot       string
+	StagingRoot     string
+	QuadletRoot     string
+	CertificateFile string
+	PrivateKeyFile  string
+	TrustBundleFile string
+	RevokedSerials  string
+	BootstrapURL    string
+	BootstrapCA     string
+	BootstrapToken  string
+	RetainToken     bool
+	Sessions        int
 }
 
 func main() {
