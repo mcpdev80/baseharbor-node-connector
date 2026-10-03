@@ -3,6 +3,7 @@ package connector
 import (
 	"errors"
 	"sync"
+	"time"
 
 	"github.com/mcpdev80/baseharbor-node-connector/internal/targetaccess"
 )
@@ -130,4 +131,14 @@ func (r *streamReplayRegistry) lastSequence(streamID string) uint64 {
 		return 0
 	}
 	return stream.events[len(stream.events)-1].Sequence
+}
+
+func (r *streamReplayRegistry) lastObserved(streamID string) time.Time {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	stream, ok := r.streams[streamID]
+	if !ok || len(stream.events) == 0 {
+		return time.Time{}
+	}
+	return stream.events[len(stream.events)-1].ObservedAt
 }
