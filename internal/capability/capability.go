@@ -64,7 +64,7 @@ func Baseline() []Descriptor {
 		{Name: QuadletDisable, Available: true, Detail: "Podman targets only"},
 		{Name: LogRead, Available: true},
 		{Name: Exec, Available: true},
-		{Name: Terminal, Available: false, Detail: "transport/session binding pending BaseHarbor target-access contract"},
+		{Name: Terminal, Available: true},
 		{Name: Metrics, Available: true},
 		{Name: Health, Available: true},
 		{Name: Capabilities, Available: true},
