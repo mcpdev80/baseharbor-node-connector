@@ -18,6 +18,7 @@ type TargetAccess struct {
 	service  *Service
 	identity targetaccess.NodeIdentity
 	health   *health.Collector
+	streams  *streamReplayRegistry
 }
 
 func (s *Service) TargetAccess(identity targetaccess.NodeIdentity) (*TargetAccess, error) {
@@ -34,6 +35,7 @@ func (s *Service) TargetAccess(identity targetaccess.NodeIdentity) (*TargetAcces
 		service:  s,
 		identity: identity,
 		health:   health.NewCollector(s.Runtime.Kind),
+		streams:  newStreamReplayRegistry(defaultStreamReplayEvents),
 	}, nil
 }
 
