@@ -172,9 +172,11 @@ func (a *TargetAccess) ServeTerminalStream(ctx context.Context, session *targeta
 					return
 				}
 			case targetaccess.StreamEnd:
+				_ = terminal.Close()
 				inputErr <- io.EOF
 				return
 			default:
+				_ = terminal.Close()
 				inputErr <- errors.New("unsupported terminal input event")
 				return
 			}
