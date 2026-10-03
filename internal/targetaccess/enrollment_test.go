@@ -20,11 +20,11 @@ func TestEnrollmentRequestAcceptsSignedCSRAndCarriesNoPrivateKey(t *testing.T) {
 	csrPEM := string(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE REQUEST", Bytes: csrDER}))
 	request := EnrollmentRequest{
 		ContractVersion: EnrollmentContractVersion,
-		NodeID: "node-a",
-		TargetID: "target-a",
-		Runtime: "docker",
-		CSRPEM: csrPEM,
-		Nonce: "nonce-a",
+		NodeID:          "node-a",
+		TargetID:        "target-a",
+		Runtime:         "docker",
+		CSRPEM:          csrPEM,
+		Nonce:           "nonce-a",
 	}
 	if err := request.Validate(); err != nil {
 		t.Fatalf("valid enrollment request rejected: %v", err)
