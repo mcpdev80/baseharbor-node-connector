@@ -195,11 +195,10 @@ func (s *Session) writeJSON(value any) error {
 	defer s.writerMu.Unlock()
 	var header [4]byte
 	binary.BigEndian.PutUint32(header[:], uint32(len(data)))
-	if _, err := s.conn.Write(header[:]); err != nil {
+	if err := writeAll(s.conn, header[:]); err != nil {
 		return err
 	}
-	_, err = s.conn.Write(data)
-	return err
+	return writeAll(s.conn, data)
 }
 
 func (s *Session) readJSON(target any) error {
@@ -219,6 +218,20 @@ func (s *Session) readJSON(target any) error {
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(target); err != nil {
 		return err
+	}
+	return nil
+}
+
+func writeAll(writer io.Writer, data []byte) error {
+	for len(data) > 0 {
+		n, err := writer.Write(data)
+		if err != nil {
+			return err
+		}
+		if n <= 0 {
+			return io.ErrShortWrite
+		}
+		data = data[n:]
 	}
 	return nil
 }
