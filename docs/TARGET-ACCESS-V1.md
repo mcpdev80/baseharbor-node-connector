@@ -155,9 +155,11 @@ Target Access v1 does not yet define:
 - artifact bundle upload framing;
 - log stream framing;
 - PTY stream framing;
-- reconnect/resume behavior.
+- reconnect/resume replay buffering across disconnected sessions.
 
-Those build on this contract without reopening Runtime Provider semantics.
+Listener/dialer ownership and bootstrap CA policy remain separate from the
+Target Access semantic contract. They can evolve without reopening Runtime
+Provider semantics.
 
 
 ## Enrollment
@@ -221,8 +223,18 @@ terminal sessions:
 - bounded log options;
 - terminal sessions require explicit argv and remain resource-scoped.
 
-This does not yet select the concrete network framing or implement the session
-transport.
+The session framing is now implemented as bounded length-prefixed JSON inside
+the authenticated TLS session.
+
+Log streams use the existing bounded Docker/Podman log operation and can follow
+live output. Terminal streams use a real Unix PTY around bounded
+`docker|podman exec -i -t ...`; they never expose a host shell. Input data and
+resize events are resource-scoped, and process termination returns a structured
+exit event. Windows advertises terminal capability as unavailable.
+
+`resume_after` remains reserved by the v1 stream contract, but current live
+stream handlers fail closed when it is non-zero. Cross-connection replay is
+therefore still pending rather than silently pretending to resume.
 
 
 ## mTLS session core
