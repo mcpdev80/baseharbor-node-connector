@@ -58,18 +58,18 @@ func TestOpenSessionMutualTLSNegotiationAndRequestFrame(t *testing.T) {
 	serverResult := make(chan result, 1)
 	go func() {
 		session, err := OpenSession(ctx, serverConn, TLSServer, TLSFiles{
-			CertificateFile: node.certPath,
-			PrivateKeyFile: node.keyPath,
-			TrustBundleFile: node.caPath,
+			CertificateFile:      node.certPath,
+			PrivateKeyFile:       node.keyPath,
+			TrustBundleFile:      node.caPath,
 			ExpectedPeerIdentity: core.identity,
 		}, serverHello, 0)
 		serverResult <- result{session: session, err: err}
 	}()
 
 	clientSession, err := OpenSession(ctx, clientConn, TLSClient, TLSFiles{
-		CertificateFile: core.certPath,
-		PrivateKeyFile: core.keyPath,
-		TrustBundleFile: core.caPath,
+		CertificateFile:      core.certPath,
+		PrivateKeyFile:       core.keyPath,
+		TrustBundleFile:      core.caPath,
 		ExpectedPeerIdentity: node.identity,
 	}, clientHello, 0)
 	if err != nil {
@@ -93,11 +93,11 @@ func TestOpenSessionMutualTLSNegotiationAndRequestFrame(t *testing.T) {
 	request := Request{
 		ContractVersion: ContractVersion,
 		ProtocolVersion: ProtocolVersion,
-		RequestID: "req-1",
-		CorrelationID: "corr-1",
-		TargetID: "target-a",
-		Operation: OpCapabilities,
-		IssuedAt: time.Now().UTC(),
+		RequestID:       "req-1",
+		CorrelationID:   "corr-1",
+		TargetID:        "target-a",
+		Operation:       OpCapabilities,
+		IssuedAt:        time.Now().UTC(),
 	}
 	readResult := make(chan error, 1)
 	go func() {
@@ -131,13 +131,13 @@ func newTestCA(t *testing.T) (*x509.Certificate, *ecdsa.PrivateKey, []byte) {
 		t.Fatal(err)
 	}
 	cert := &x509.Certificate{
-		SerialNumber: big.NewInt(1),
-		Subject: pkix.Name{CommonName: "BaseHarbor Test CA"},
-		NotBefore: time.Now().Add(-time.Hour),
-		NotAfter: time.Now().Add(time.Hour),
-		IsCA: true,
+		SerialNumber:          big.NewInt(1),
+		Subject:               pkix.Name{CommonName: "BaseHarbor Test CA"},
+		NotBefore:             time.Now().Add(-time.Hour),
+		NotAfter:              time.Now().Add(time.Hour),
+		IsCA:                  true,
 		BasicConstraintsValid: true,
-		KeyUsage: x509.KeyUsageCertSign | x509.KeyUsageDigitalSignature,
+		KeyUsage:              x509.KeyUsageCertSign | x509.KeyUsageDigitalSignature,
 	}
 	der, err := x509.CreateCertificate(rand.Reader, cert, cert, &key.PublicKey, key)
 	if err != nil {
@@ -162,12 +162,12 @@ func newTestLeaf(t *testing.T, ca *x509.Certificate, caKey *ecdsa.PrivateKey, ca
 	}
 	cert := &x509.Certificate{
 		SerialNumber: serial,
-		Subject: pkix.Name{CommonName: identity},
-		NotBefore: time.Now().Add(-time.Hour),
-		NotAfter: time.Now().Add(time.Hour),
-		KeyUsage: x509.KeyUsageDigitalSignature,
-		ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth, x509.ExtKeyUsageServerAuth},
-		URIs: []*url.URL{uri},
+		Subject:      pkix.Name{CommonName: identity},
+		NotBefore:    time.Now().Add(-time.Hour),
+		NotAfter:     time.Now().Add(time.Hour),
+		KeyUsage:     x509.KeyUsageDigitalSignature,
+		ExtKeyUsage:  []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth, x509.ExtKeyUsageServerAuth},
+		URIs:         []*url.URL{uri},
 	}
 	der, err := x509.CreateCertificate(rand.Reader, cert, ca, &key.PublicKey, caKey)
 	if err != nil {
