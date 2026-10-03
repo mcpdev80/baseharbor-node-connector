@@ -24,7 +24,7 @@ func TestStreamOpenIsTypedAndRejectsTerminalWithoutArgv(t *testing.T) {
 	logs := StreamOpen{
 		ContractVersion: ContractVersion,
 		ProtocolVersion: ProtocolVersion,
-		StreamID: "stream-1", TargetID: "target-a", ResourceID: "container-a",
+		StreamID:        "stream-1", TargetID: "target-a", ResourceID: "container-a",
 		Kind: StreamLogs, Logs: &LogStreamOptions{Tail: 100, Follow: true},
 	}
 	if err := logs.Validate(); err != nil {
@@ -34,7 +34,7 @@ func TestStreamOpenIsTypedAndRejectsTerminalWithoutArgv(t *testing.T) {
 	terminal := StreamOpen{
 		ContractVersion: ContractVersion,
 		ProtocolVersion: ProtocolVersion,
-		StreamID: "stream-2", TargetID: "target-a", ResourceID: "container-a",
+		StreamID:        "stream-2", TargetID: "target-a", ResourceID: "container-a",
 		Kind: StreamTerminal, Terminal: &TerminalStreamOptions{},
 	}
 	if err := terminal.Validate(); err == nil {
