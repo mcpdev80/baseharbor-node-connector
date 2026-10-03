@@ -18,6 +18,7 @@ type streamReplayRegistry struct {
 type streamReplay struct {
 	events   []targetaccess.StreamEvent
 	terminal bool
+	active   bool
 	closed   bool
 }
 
@@ -37,7 +38,7 @@ func (r *streamReplayRegistry) begin(streamID string, terminal bool) error {
 	if existing, ok := r.streams[streamID]; ok && !existing.closed {
 		return errors.New("stream_id is already active")
 	}
-	r.streams[streamID] = &streamReplay{terminal: terminal}
+	r.streams[streamID] = &streamReplay{terminal: terminal, active: true}
 	return nil
 }
 
@@ -56,6 +57,46 @@ func (r *streamReplayRegistry) append(event targetaccess.StreamEvent) {
 	switch event.Type {
 	case targetaccess.StreamExit, targetaccess.StreamEnd, targetaccess.StreamError:
 		stream.closed = true
+		stream.active = false
+	}
+}
+
+func (r *streamReplayRegistry) resume(streamID string, after uint64) ([]targetaccess.StreamEvent, bool, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	stream, ok := r.streams[streamID]
+	if !ok {
+		return nil, false, errors.New("stream replay state was not found")
+	}
+	if stream.terminal && !stream.closed {
+		return nil, false, errors.New("live terminal sessions cannot be reattached")
+	}
+	if stream.active && !stream.closed {
+		return nil, false, errors.New("stream is still attached to another transport")
+	}
+	if after > 0 && len(stream.events) > 0 {
+		first := stream.events[0].Sequence
+		if after+1 < first {
+			return nil, stream.closed, errors.New("requested resume cursor is older than retained stream history")
+		}
+	}
+	var result []targetaccess.StreamEvent
+	for _, event := range stream.events {
+		if event.Sequence > after {
+			result = append(result, event)
+		}
+	}
+	if !stream.closed {
+		stream.active = true
+	}
+	return result, stream.closed, nil
+}
+
+func (r *streamReplayRegistry) detach(streamID string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if stream, ok := r.streams[streamID]; ok && !stream.closed {
+		stream.active = false
 	}
 }
 
