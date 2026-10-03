@@ -145,27 +145,13 @@ func bootstrapHTTPClient(cfg BootstrapConfig) (*http.Client, error) {
 	tlsConfig := &tls.Config{
 		MinVersion: tls.VersionTLS13,
 		ServerName: strings.TrimSpace(cfg.ServerName),
-		InsecureSkipVerify: true,
+		RootCAs: roots,
 	}
 	tlsConfig.VerifyConnection = func(state tls.ConnectionState) error {
 		if len(state.PeerCertificates) == 0 {
 			return errors.New("bootstrap server did not present a certificate")
 		}
-		leaf := state.PeerCertificates[0]
-		intermediates := x509.NewCertPool()
-		for _, cert := range state.PeerCertificates[1:] {
-			intermediates.AddCert(cert)
-		}
-		if _, err := leaf.Verify(x509.VerifyOptions{
-			Roots: roots,
-			Intermediates: intermediates,
-			KeyUsages: []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
-			DNSName: strings.TrimSpace(cfg.ServerName),
-			CurrentTime: time.Now(),
-		}); err != nil {
-			return fmt.Errorf("verify bootstrap server certificate: %w", err)
-		}
-		return verifyPeerIdentity(leaf, cfg.ExpectedServerIdentity)
+		return verifyPeerIdentity(state.PeerCertificates[0], cfg.ExpectedServerIdentity)
 	}
 	timeout := cfg.Timeout
 	if timeout == 0 {
