@@ -151,15 +151,13 @@ Target Access v1 does not yet define:
 - enrollment workflow;
 - certificate issuance authority;
 - revocation distribution mechanism;
-- network framing/connection direction;
-- artifact bundle upload framing;
-- log stream framing;
-- PTY stream framing;
-- listener/dialer ownership and bootstrap CA policy.
+- bootstrap authentication and certificate-authority implementation;
+- production stream multiplexing/pool strategy for multiple concurrent outbound sessions.
 
-Listener/dialer ownership and bootstrap CA policy remain separate from the
-Target Access semantic contract. They can evolve without reopening Runtime
-Provider semantics.
+Connection direction and ownership are now fixed for the connector product:
+the connector dials BaseHarbor Core outbound and does not expose an inbound
+management listener. The concrete bootstrap/CA implementation remains separate
+from the Target Access semantic contract.
 
 
 ## Enrollment
@@ -261,9 +259,14 @@ The session:
 - uses complete writes and strict unknown-field decoding;
 - carries requests, responses and dedicated stream frames.
 
-Connection establishment/direction remains separate. The same session can be
-used on an inbound listener or an outbound-initiated tunnel without changing
-the Target Access semantic contract.
+The product topology is outbound-initiated from the Node Connector to
+BaseHarbor Core. The connector does not expose an inbound management listener.
+This reduces firewall/NAT requirements and attack surface while keeping the
+session framing independent from the semantic Target Access contract.
+
+`RunOutboundControl` owns the persistent control connection, performs mTLS,
+negotiates Target Access versions after authentication, serves typed requests
+and reconnects with bounded exponential backoff after transport loss.
 
 `connector.capabilities` is an authenticated typed operation and returns the
 actual runtime capability projection after session establishment.
