@@ -10,8 +10,10 @@ const (
 	ImagePull        Name = "runtime.image.pull"
 	VolumeList       Name = "runtime.volume.list"
 	VolumeEnsure     Name = "runtime.volume.ensure"
+	VolumeRemove     Name = "runtime.volume.remove"
 	NetworkList      Name = "runtime.network.list"
 	NetworkEnsure    Name = "runtime.network.ensure"
+	NetworkRemove    Name = "runtime.network.remove"
 	ContainerStart   Name = "runtime.container.start"
 	ContainerStop    Name = "runtime.container.stop"
 	ContainerRestart Name = "runtime.container.restart"
@@ -20,6 +22,8 @@ const (
 	ComposeDestroy   Name = "runtime.compose.destroy"
 	QuadletApply     Name = "runtime.quadlet.apply"
 	QuadletRemove    Name = "runtime.quadlet.remove"
+	QuadletEnable    Name = "runtime.quadlet.enable"
+	QuadletDisable   Name = "runtime.quadlet.disable"
 	LogRead          Name = "runtime.logs.read"
 	Exec             Name = "runtime.exec"
 	Terminal         Name = "runtime.terminal"
@@ -42,8 +46,10 @@ func Baseline() []Descriptor {
 		{Name: ImagePull, Available: true},
 		{Name: VolumeList, Available: true},
 		{Name: VolumeEnsure, Available: true},
+		{Name: VolumeRemove, Available: true},
 		{Name: NetworkList, Available: true},
 		{Name: NetworkEnsure, Available: true},
+		{Name: NetworkRemove, Available: true},
 		{Name: ContainerStart, Available: true},
 		{Name: ContainerStop, Available: true},
 		{Name: ContainerRestart, Available: true},
@@ -52,6 +58,8 @@ func Baseline() []Descriptor {
 		{Name: ComposeDestroy, Available: true},
 		{Name: QuadletApply, Available: true, Detail: "Podman targets only"},
 		{Name: QuadletRemove, Available: true, Detail: "Podman targets only"},
+		{Name: QuadletEnable, Available: true, Detail: "Podman targets only"},
+		{Name: QuadletDisable, Available: true, Detail: "Podman targets only"},
 		{Name: LogRead, Available: true},
 		{Name: Exec, Available: true},
 		{Name: Terminal, Available: false, Detail: "transport/session binding pending BaseHarbor target-access contract"},
