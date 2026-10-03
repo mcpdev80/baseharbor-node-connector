@@ -13,7 +13,7 @@ import (
 
 func TestTargetAccessCapabilitiesOperationReturnsNegotiatedProjection(t *testing.T) {
 	service := &Service{
-		Runtime: bhruntime.Detection{Kind: bhruntime.Docker},
+		Runtime:      bhruntime.Detection{Kind: bhruntime.Docker},
 		Capabilities: capability.ForRuntime("docker"),
 	}
 	access, err := service.TargetAccess(targetaccess.NodeIdentity{
@@ -26,11 +26,11 @@ func TestTargetAccessCapabilitiesOperationReturnsNegotiatedProjection(t *testing
 	response := access.Execute(context.Background(), targetaccess.Request{
 		ContractVersion: targetaccess.ContractVersion,
 		ProtocolVersion: targetaccess.ProtocolVersion,
-		RequestID: "req-capabilities",
-		CorrelationID: "corr-a",
-		TargetID: "target-a",
-		Operation: targetaccess.OpCapabilities,
-		IssuedAt: time.Now().UTC(),
+		RequestID:       "req-capabilities",
+		CorrelationID:   "corr-a",
+		TargetID:        "target-a",
+		Operation:       targetaccess.OpCapabilities,
+		IssuedAt:        time.Now().UTC(),
 	})
 	if !response.Success {
 		t.Fatalf("capability request failed: %#v", response.Error)
