@@ -20,10 +20,10 @@ func TestStageBundleWritesVerifiedFilesInsideStagingRoot(t *testing.T) {
 	result, err := StageBundle(root, Bundle{
 		BundleID: "deploy-1",
 		Files: []BundleFile{{
-			Path: "compose.yaml",
+			Path:   "compose.yaml",
 			SHA256: hex.EncodeToString(sum[:]),
-			Mode: 0o600,
-			Data: data,
+			Mode:   0o600,
+			Data:   data,
 		}},
 	})
 	if err != nil {
@@ -49,14 +49,14 @@ func TestStageBundleRejectsTraversalAndHashMismatch(t *testing.T) {
 	}
 	_, err = StageBundle(root, Bundle{
 		BundleID: "deploy-1",
-		Files: []BundleFile{{Path: "../escape", SHA256: "deadbeef", Data: []byte("x")}},
+		Files:    []BundleFile{{Path: "../escape", SHA256: "deadbeef", Data: []byte("x")}},
 	})
 	if err == nil {
 		t.Fatal("bundle traversal unexpectedly accepted")
 	}
 	_, err = StageBundle(root, Bundle{
 		BundleID: "deploy-1",
-		Files: []BundleFile{{Path: "safe.txt", SHA256: "deadbeef", Data: []byte("x")}},
+		Files:    []BundleFile{{Path: "safe.txt", SHA256: "deadbeef", Data: []byte("x")}},
 	})
 	if err == nil {
 		t.Fatal("hash mismatch unexpectedly accepted")
