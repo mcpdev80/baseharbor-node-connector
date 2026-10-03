@@ -29,6 +29,7 @@ const (
 	Terminal         Name = "runtime.terminal"
 	Metrics          Name = "runtime.metrics"
 	Health           Name = "connector.health"
+	BundleStage      Name = "artifact.bundle.stage"
 )
 
 type Descriptor struct {
@@ -65,5 +66,6 @@ func Baseline() []Descriptor {
 		{Name: Terminal, Available: false, Detail: "transport/session binding pending BaseHarbor target-access contract"},
 		{Name: Metrics, Available: true},
 		{Name: Health, Available: true},
+		{Name: BundleStage, Available: true},
 	}
 }
