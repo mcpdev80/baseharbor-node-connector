@@ -2,6 +2,8 @@ package connector
 
 import (
 	"testing"
+
+	"github.com/mcpdev80/baseharbor-node-connector/internal/targetaccess"
 )
 
 func TestOutboundPoolDefaultsToBoundedParallelSessions(t *testing.T) {
@@ -15,6 +17,12 @@ func TestOutboundPoolRejectsExcessiveSessionCount(t *testing.T) {
 	cfg := OutboundPoolConfig{
 		OutboundConfig: OutboundConfig{
 			Address: "core.example:9443",
+			TLS: targetaccess.TLSFiles{
+				CertificateFile: "node.crt",
+				PrivateKeyFile: "node.key",
+				TrustBundleFile: "ca.pem",
+				ExpectedPeerIdentity: "spiffe://baseharbor/core/control-plane",
+			},
 		},
 		Sessions: maxOutboundSessions + 1,
 	}
