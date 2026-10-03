@@ -147,6 +147,7 @@ func (a *TargetAccess) ServeTerminalStream(ctx context.Context, session *targeta
 		for {
 			var event targetaccess.StreamEvent
 			if err := session.ReadStreamEvent(&event); err != nil {
+				_ = terminal.Close()
 				inputErr <- err
 				return
 			}
