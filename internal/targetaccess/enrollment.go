@@ -25,11 +25,11 @@ func (r EnrollmentRequest) Validate() error {
 		return fmt.Errorf("unsupported enrollment contract version %q", r.ContractVersion)
 	}
 	for name, value := range map[string]string{
-		"node_id": r.NodeID,
+		"node_id":   r.NodeID,
 		"target_id": r.TargetID,
-		"runtime": r.Runtime,
-		"csr_pem": r.CSRPEM,
-		"nonce": r.Nonce,
+		"runtime":   r.Runtime,
+		"csr_pem":   r.CSRPEM,
+		"nonce":     r.Nonce,
 	} {
 		if strings.TrimSpace(value) == "" {
 			return fmt.Errorf("%s is required", name)
@@ -51,11 +51,11 @@ func (r EnrollmentRequest) Validate() error {
 
 type EnrollmentResponse struct {
 	ContractVersion string       `json:"contract_version"`
-	Node             NodeIdentity `json:"node"`
-	CertificatePEM   string       `json:"certificate_pem"`
-	TrustBundlePEM   string       `json:"trust_bundle_pem"`
-	Nonce            string       `json:"nonce,omitempty"`
-	NotAfter         time.Time    `json:"not_after"`
+	Node            NodeIdentity `json:"node"`
+	CertificatePEM  string       `json:"certificate_pem"`
+	TrustBundlePEM  string       `json:"trust_bundle_pem"`
+	Nonce           string       `json:"nonce,omitempty"`
+	NotAfter        time.Time    `json:"not_after"`
 }
 
 func (r EnrollmentResponse) Validate(now time.Time) error {
