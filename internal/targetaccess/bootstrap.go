@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"crypto"
+	"crypto/ed25519"
 	"crypto/rand"
 	"crypto/tls"
 	"crypto/x509"
@@ -69,6 +70,9 @@ func BootstrapEnroll(ctx context.Context, cfg BootstrapConfig, files TLSFiles, n
 	if err != nil {
 		return EnrollmentResponse{}, err
 	}
+	if err := EnsureEnrollmentPrivateKey(files.PrivateKeyFile); err != nil {
+		return EnrollmentResponse{}, err
+	}
 	csrPEM, err := createEnrollmentCSR(files.PrivateKeyFile, node.Identity)
 	if err != nil {
 		return EnrollmentResponse{}, err
@@ -125,6 +129,9 @@ func BootstrapEnroll(ctx context.Context, cfg BootstrapConfig, files TLSFiles, n
 	}
 	if err := validateEnrollmentBinding(node, enrollment.Node); err != nil {
 		return EnrollmentResponse{}, err
+	}
+	if enrollment.Nonce == "" || enrollment.Nonce != nonce {
+		return EnrollmentResponse{}, errors.New("enrollment response nonce does not match bootstrap request")
 	}
 	if err := InstallEnrollment(files, enrollment, time.Now().UTC()); err != nil {
 		return EnrollmentResponse{}, err
@@ -189,6 +196,56 @@ func readBootstrapToken(path string) (string, error) {
 		return "", errors.New("bootstrap token must be a single line")
 	}
 	return token, nil
+}
+
+func EnsureEnrollmentPrivateKey(path string) error {
+	path = strings.TrimSpace(path)
+	if path == "" {
+		return errors.New("enrollment private key path is required")
+	}
+	if info, err := os.Stat(path); err == nil {
+		if info.IsDir() {
+			return errors.New("enrollment private key path is a directory")
+		}
+		if info.Mode().Perm()&0o077 != 0 {
+			return errors.New("enrollment private key permissions must not grant group or other access")
+		}
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		block, _ := pem.Decode(data)
+		if block == nil {
+			return errors.New("enrollment private key contains no PEM block")
+		}
+		key, err := parsePrivateKey(block.Bytes)
+		if err != nil {
+			return err
+		}
+		if _, ok := key.(crypto.Signer); !ok {
+			return errors.New("enrollment private key is not a crypto signer")
+		}
+		return nil
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("inspect enrollment private key: %w", err)
+	}
+
+	_, privateKey, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		return fmt.Errorf("generate enrollment private key: %w", err)
+	}
+	der, err := x509.MarshalPKCS8PrivateKey(privateKey)
+	if err != nil {
+		return fmt.Errorf("encode enrollment private key: %w", err)
+	}
+	data := pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: der})
+	if len(data) == 0 {
+		return errors.New("encode enrollment private key PEM")
+	}
+	if err := atomicWriteFile(path, data, 0o600); err != nil {
+		return fmt.Errorf("install enrollment private key: %w", err)
+	}
+	return nil
 }
 
 func createEnrollmentCSR(privateKeyPath, identity string) (string, error) {
