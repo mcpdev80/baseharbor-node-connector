@@ -18,9 +18,9 @@ func TestOutboundPoolRejectsExcessiveSessionCount(t *testing.T) {
 		OutboundConfig: OutboundConfig{
 			Address: "core.example:9443",
 			TLS: targetaccess.TLSFiles{
-				CertificateFile: "node.crt",
-				PrivateKeyFile: "node.key",
-				TrustBundleFile: "ca.pem",
+				CertificateFile:      "node.crt",
+				PrivateKeyFile:       "node.key",
+				TrustBundleFile:      "ca.pem",
 				ExpectedPeerIdentity: "spiffe://baseharbor/core/control-plane",
 			},
 		},
