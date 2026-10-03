@@ -13,10 +13,10 @@ func TestReadInboundFrameClassifiesRequestAndStreamOpen(t *testing.T) {
 	request := Request{
 		ContractVersion: ContractVersion,
 		ProtocolVersion: ProtocolVersion,
-		RequestID: "req-1",
-		TargetID: "target-a",
-		Operation: OpCapabilities,
-		IssuedAt: time.Now().UTC(),
+		RequestID:       "req-1",
+		TargetID:        "target-a",
+		Operation:       OpCapabilities,
+		IssuedAt:        time.Now().UTC(),
 	}
 	session := testReadSession(t, request)
 	frame, err := session.ReadInboundFrame()
@@ -30,11 +30,11 @@ func TestReadInboundFrameClassifiesRequestAndStreamOpen(t *testing.T) {
 	open := StreamOpen{
 		ContractVersion: ContractVersion,
 		ProtocolVersion: ProtocolVersion,
-		StreamID: "stream-1",
-		TargetID: "target-a",
-		ResourceID: "container-a",
-		Kind: StreamLogs,
-		Logs: &LogStreamOptions{Tail: 100, Follow: true},
+		StreamID:        "stream-1",
+		TargetID:        "target-a",
+		ResourceID:      "container-a",
+		Kind:            StreamLogs,
+		Logs:            &LogStreamOptions{Tail: 100, Follow: true},
 	}
 	session = testReadSession(t, open)
 	frame, err = session.ReadInboundFrame()
@@ -50,8 +50,8 @@ func TestReadInboundFrameRejectsAmbiguousShape(t *testing.T) {
 	value := map[string]any{
 		"contract_version": ContractVersion,
 		"protocol_version": ProtocolVersion,
-		"operation": string(OpCapabilities),
-		"kind": string(StreamLogs),
+		"operation":        string(OpCapabilities),
+		"kind":             string(StreamLogs),
 	}
 	session := testReadSession(t, value)
 	if _, err := session.ReadInboundFrame(); err == nil {
@@ -71,7 +71,7 @@ func testReadSession(t *testing.T, value any) *Session {
 	framed.Write(header[:])
 	framed.Write(data)
 	return &Session{
-		reader: bufio.NewReader(bytes.NewReader(framed.Bytes())),
+		reader:   bufio.NewReader(bytes.NewReader(framed.Bytes())),
 		maxFrame: DefaultMaxFrameBytes,
 		Negotiated: Negotiated{
 			ContractVersion: ContractVersion,
