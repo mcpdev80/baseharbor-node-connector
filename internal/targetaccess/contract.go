@@ -84,6 +84,7 @@ const (
 	OpExec             Operation = "runtime.exec"
 	OpMetrics          Operation = "runtime.metrics"
 	OpHealth           Operation = "connector.health"
+	OpCapabilities     Operation = "connector.capabilities"
 	OpBundleStage      Operation = "artifact.bundle.stage"
 )
 
@@ -93,7 +94,7 @@ var allowedOperations = map[Operation]struct{}{
 	OpNetworkList: {}, OpNetworkEnsure: {}, OpNetworkRemove: {}, OpContainerStart: {}, OpContainerStop: {},
 	OpContainerRestart: {}, OpContainerRemove: {}, OpComposeApply: {}, OpComposeDestroy: {},
 	OpQuadletApply: {}, OpQuadletRemove: {}, OpQuadletEnable: {}, OpQuadletDisable: {},
-	OpLogRead: {}, OpExec: {}, OpMetrics: {}, OpHealth: {}, OpBundleStage: {},
+	OpLogRead: {}, OpExec: {}, OpMetrics: {}, OpHealth: {}, OpCapabilities: {}, OpBundleStage: {},
 }
 
 func (o Operation) Validate() error {
