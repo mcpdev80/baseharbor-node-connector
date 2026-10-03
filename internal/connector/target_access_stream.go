@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"strings"
 	"sync"
 	"time"
 
@@ -31,45 +32,90 @@ func (a *TargetAccess) ServeLogStream(ctx context.Context, session *targetaccess
 	if !a.capabilityAvailable(capability.LogRead) {
 		return errors.New("log streaming capability is unavailable")
 	}
-	if open.ResumeAfter != 0 {
-		return errors.New("log stream replay is not implemented; resume_after must be zero")
+
+	sequence := uint64(1)
+	since := open.Logs.Since
+	if open.ResumeAfter == 0 {
+		if err := a.streams.begin(open.StreamID, false); err != nil {
+			return err
+		}
+	} else {
+		events, closed, err := a.streams.resume(open.StreamID, open.ResumeAfter)
+		if err != nil {
+			return err
+		}
+		for _, event := range events {
+			if err := session.WriteStreamEvent(event); err != nil {
+				a.streams.detach(open.StreamID)
+				return err
+			}
+		}
+		if closed {
+			return nil
+		}
+		sequence = a.streams.lastSequence(open.StreamID) + 1
+		if observed := a.streams.lastObserved(open.StreamID); !observed.IsZero() {
+			overlap := observed.Add(-5 * time.Second).UTC().Format(time.RFC3339Nano)
+			if strings.TrimSpace(since) == "" {
+				since = overlap
+			} else if parsed, err := time.Parse(time.RFC3339Nano, since); err == nil && parsed.After(observed.Add(-5*time.Second)) {
+				since = overlap
+			}
+		}
 	}
+	defer func() {
+		a.streams.detach(open.StreamID)
+	}()
 
 	reader, err := a.service.Observation.LogStream(ctx, open.ResourceID, container.LogOptions{
 		Tail: open.Logs.Tail,
-		Since: open.Logs.Since,
+		Since: since,
 	}, open.Logs.Follow)
 	if err != nil {
+		a.streams.detach(open.StreamID)
 		return err
 	}
 	defer reader.Close()
 
-	sequence := uint64(1)
-	if err := session.WriteStreamEvent(streamEvent(open, sequence, targetaccess.StreamReady, nil, "")); err != nil {
-		return err
+	send := func(event targetaccess.StreamEvent) error {
+		a.streams.append(event)
+		if err := session.WriteStreamEvent(event); err != nil {
+			a.streams.detach(open.StreamID)
+			return err
+		}
+		return nil
 	}
-	sequence++
+
+	if open.ResumeAfter == 0 {
+		if err := send(streamEvent(open, sequence, targetaccess.StreamReady, nil, "")); err != nil {
+			return err
+		}
+		sequence++
+	}
 
 	buffer := make([]byte, 32*1024)
 	for {
 		n, readErr := reader.Read(buffer)
 		if n > 0 {
 			data := append([]byte(nil), buffer[:n]...)
-			if err := session.WriteStreamEvent(streamEvent(open, sequence, targetaccess.StreamData, data, "")); err != nil {
+			if err := send(streamEvent(open, sequence, targetaccess.StreamData, data, "")); err != nil {
 				return err
 			}
 			sequence++
 		}
 		if readErr != nil {
 			if errors.Is(readErr, io.EOF) {
-				return session.WriteStreamEvent(streamEvent(open, sequence, targetaccess.StreamEnd, nil, ""))
+				event := streamEvent(open, sequence, targetaccess.StreamEnd, nil, "")
+				return send(event)
 			}
-			_ = session.WriteStreamEvent(streamEvent(open, sequence, targetaccess.StreamError, nil, readErr.Error()))
+			event := streamEvent(open, sequence, targetaccess.StreamError, nil, readErr.Error())
+			_ = send(event)
 			return readErr
 		}
 		select {
 		case <-ctx.Done():
-			_ = session.WriteStreamEvent(streamEvent(open, sequence, targetaccess.StreamEnd, nil, ctx.Err().Error()))
+			event := streamEvent(open, sequence, targetaccess.StreamEnd, nil, ctx.Err().Error())
+			_ = send(event)
 			return ctx.Err()
 		default:
 		}
