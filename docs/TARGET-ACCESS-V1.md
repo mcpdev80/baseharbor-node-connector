@@ -144,20 +144,16 @@ existing traversal/symlink-escape protection.
 BaseHarbor Core audit/execution correlation through the connector without
 giving the connector ownership of authorization or audit policy.
 
-## Still intentionally open
+## Remaining external responsibility
 
-Target Access v1 does not yet define:
+The connector side of bootstrap and concurrent outbound session handling is now
+implemented. The certificate issuance authority and enrollment endpoint remain
+a BaseHarbor Core/control-plane responsibility rather than connector-owned
+state.
 
-- enrollment workflow;
-- certificate issuance authority;
-- revocation distribution mechanism;
-- bootstrap authentication and certificate-authority implementation;
-- production stream multiplexing/pool strategy for multiple concurrent outbound sessions.
-
-Connection direction and ownership are now fixed for the connector product:
-the connector dials BaseHarbor Core outbound and does not expose an inbound
-management listener. The concrete bootstrap/CA implementation remains separate
-from the Target Access semantic contract.
+Connection direction and ownership are fixed for the connector product: the
+connector dials BaseHarbor Core outbound and does not expose an inbound
+management listener.
 
 
 ## Enrollment
@@ -175,8 +171,19 @@ The enrollment response contains the assigned Node identity, certificate chain,
 trust bundle and certificate expiry. Private-key material is never returned by
 or embedded in the enrollment response.
 
-The bootstrap authentication mechanism and certificate authority remain outside
-Target Access v1 and may evolve independently.
+The bootstrap client uses a pinned bootstrap trust bundle, HTTPS with TLS 1.3,
+normal X.509 hostname verification plus explicit expected Core URI/DNS SAN
+identity, and a one-time bearer token stored in a private local file. The
+connector creates an Ed25519 private key locally when none exists, sends only a
+signed CSR, requires the enrollment response to echo the random request nonce,
+binds the returned Node/Target/runtime/identity to the request, verifies the
+issued certificate and chain, installs certificate/trust material atomically,
+and consumes the bootstrap token after successful installation by default.
+
+Redirects are not followed during enrollment, preventing bootstrap credentials
+from being forwarded to another endpoint. The CA/issuance backend itself
+remains a Core/control-plane responsibility and may evolve independently of the
+Target Access semantic contract.
 
 ## Rotation and revocation
 
@@ -264,9 +271,17 @@ BaseHarbor Core. The connector does not expose an inbound management listener.
 This reduces firewall/NAT requirements and attack surface while keeping the
 session framing independent from the semantic Target Access contract.
 
-`RunOutboundControl` owns the persistent control connection, performs mTLS,
-negotiates Target Access versions after authentication, serves typed requests
-and reconnects with bounded exponential backoff after transport loss.
+`RunOutboundControl` remains the single-session compatibility entry point.
+
+For production concurrency, `RunOutboundPool` maintains a bounded set of
+outbound-only authenticated sessions (four by default, maximum 32). Every
+session is equivalent: after authenticated version negotiation its next frame
+is strictly classified as either a typed control Request or a StreamOpen.
+A session carrying a log or terminal stream remains occupied by that stream,
+while the remaining sessions continue serving control operations or additional
+streams. This avoids head-of-line blocking without changing the Target Access v1
+wire objects or adding an inbound management listener. Each pool worker
+reconnects with bounded exponential backoff.
 
 `connector.capabilities` is an authenticated typed operation and returns the
 actual runtime capability projection after session establishment.
