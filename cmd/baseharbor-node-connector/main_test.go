@@ -1,6 +1,7 @@
 package main
 
-import (\n\t"github.com/mcpdev80/baseharbor-node-connector/internal/targetaccess"
+import (
+	"github.com/mcpdev80/baseharbor-node-connector/internal/targetaccess"
 	"bytes"
 	"os"
 	"path/filepath"
