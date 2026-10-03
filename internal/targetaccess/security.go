@@ -23,6 +23,7 @@ type TLSFiles struct {
 	CertificateFile      string
 	PrivateKeyFile       string
 	TrustBundleFile      string
+	RevokedSerialsFile   string
 	ExpectedPeerIdentity string
 	ServerName           string
 }
@@ -114,7 +115,33 @@ func (f TLSFiles) verifyConnection(role TLSRole, state tls.ConnectionState) erro
 	}); err != nil {
 		return fmt.Errorf("verify peer certificate: %w", err)
 	}
+	if err := f.verifyNotRevoked(leaf); err != nil {
+		return err
+	}
 	return verifyPeerIdentity(leaf, f.ExpectedPeerIdentity)
+}
+
+func (f TLSFiles) verifyNotRevoked(cert *x509.Certificate) error {
+	path := strings.TrimSpace(f.RevokedSerialsFile)
+	if path == "" {
+		return nil
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return fmt.Errorf("read revoked serials: %w", err)
+	}
+	serial := strings.ToLower(cert.SerialNumber.Text(16))
+	for _, line := range strings.Split(string(data), "\n") {
+		value := strings.ToLower(strings.TrimSpace(line))
+		if value == "" || strings.HasPrefix(value, "#") {
+			continue
+		}
+		value = strings.TrimPrefix(value, "0x")
+		if value == serial {
+			return fmt.Errorf("peer certificate serial %s is revoked", cert.SerialNumber.Text(16))
+		}
+	}
+	return nil
 }
 
 func verifyPeerIdentity(cert *x509.Certificate, expected string) error {
