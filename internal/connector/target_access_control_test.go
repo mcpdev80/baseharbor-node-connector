@@ -14,12 +14,12 @@ import (
 )
 
 type testControlWire struct {
-	ctx context.Context
-	cancel context.CancelFunc
-	frames chan targetaccess.InboundFrame
+	ctx       context.Context
+	cancel    context.CancelFunc
+	frames    chan targetaccess.InboundFrame
 	responses chan targetaccess.Response
 	closeOnce sync.Once
-	reads atomic.Int32
+	reads     atomic.Int32
 }
 
 func newTestControlWire(t *testing.T) *testControlWire {
@@ -52,7 +52,7 @@ func (w *testControlWire) WriteResponse(response targetaccess.Response) error {
 	}
 }
 func (w *testControlWire) Context() context.Context { return w.ctx }
-func (w *testControlWire) Close() error { w.closeOnce.Do(w.cancel); return nil }
+func (w *testControlWire) Close() error             { w.closeOnce.Do(w.cancel); return nil }
 
 func controlRequest(id string) targetaccess.Request {
 	return targetaccess.Request{ContractVersion: targetaccess.ContractVersion, ProtocolVersion: targetaccess.ProtocolVersion,

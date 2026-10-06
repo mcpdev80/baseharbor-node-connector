@@ -170,7 +170,7 @@ func (s *Session) ReadInboundFrame() (InboundFrame, error) {
 	}
 	var shape map[string]json.RawMessage
 	if err := json.Unmarshal(data, &shape); err != nil {
-		return InboundFrame{}, err
+		return InboundFrame{}, ErrTargetAccessWire
 	}
 	_, hasOperation := shape["operation"]
 	_, hasStreamKind := shape["kind"]

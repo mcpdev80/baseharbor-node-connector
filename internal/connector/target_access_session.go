@@ -39,14 +39,14 @@ type controlWire interface {
 }
 
 type inboundControl struct {
-	frame targetaccess.InboundFrame
+	frame           targetaccess.InboundFrame
 	continueReading chan bool
 }
 
 type activeControl struct {
-	ctx context.Context
+	ctx     context.Context
 	request targetaccess.Request
-	cancel context.CancelFunc
+	cancel  context.CancelFunc
 }
 
 func readControlFrames(ctx context.Context, wire controlWire, incoming chan<- inboundControl, failures chan<- error) {
@@ -85,10 +85,16 @@ func serveControlFrames(
 	execute func(context.Context, targetaccess.Request) targetaccess.Response,
 	stream func(context.Context, targetaccess.StreamOpen) error,
 ) error {
-	ctx, cancel := context.WithCancel(ctx)
+	caller := ctx
+	ctx, cancel := context.WithCancel(wire.Context())
 	defer cancel()
 	defer wire.Close()
-	stop := context.AfterFunc(wire.Context(), cancel)
+	if deadline, ok := caller.Deadline(); ok {
+		bounded, stopDeadline := context.WithDeadline(ctx, deadline)
+		defer stopDeadline()
+		ctx = bounded
+	}
+	stop := context.AfterFunc(caller, cancel)
 	defer stop()
 	stopClose := context.AfterFunc(ctx, func() { _ = wire.Close() })
 	defer stopClose()
@@ -129,6 +135,9 @@ func serveControlFrames(
 				active.cancel()
 				event.continueReading <- true
 			case frame.Request != nil:
+				if err := ctx.Err(); err != nil {
+					return err
+				}
 				request := *frame.Request
 				if active != nil {
 					if err := wire.WriteResponse(targetaccess.FailureResponse(request, "capability_unavailable", "The session already has an active operation.", false)); err != nil {
