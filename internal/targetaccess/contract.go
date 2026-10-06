@@ -205,8 +205,7 @@ func FailureResponse(request Request, code, message string, retryable bool) Resp
 type Cancel struct {
 	ContractVersion string `json:"contract_version"`
 	ProtocolVersion string `json:"protocol_version"`
-	RequestID string `json:"request_id"`
-	CorrelationID string `json:"correlation_id"`
-	Cancel bool `json:"cancel"`
+	RequestID       string `json:"request_id"`
+	CorrelationID   string `json:"correlation_id"`
+	Cancel          bool   `json:"cancel"`
 }
-

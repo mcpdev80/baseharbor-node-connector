@@ -24,10 +24,10 @@ type Session struct {
 	writerMu   sync.Mutex
 	maxFrame   uint32
 	Negotiated Negotiated
-	lifetime context.Context
-	cancel context.CancelFunc
-	closeOnce sync.Once
-	expiresAt time.Time
+	lifetime   context.Context
+	cancel     context.CancelFunc
+	closeOnce  sync.Once
+	expiresAt  time.Time
 }
 
 func OpenSession(
@@ -41,9 +41,13 @@ func OpenSession(
 	if conn == nil {
 		return nil, errors.New("connection is required")
 	}
-	handshakeDeadline := time.Now().Add(30*time.Second)
-	if deadline, ok := ctx.Deadline(); ok && deadline.Before(handshakeDeadline) { handshakeDeadline=deadline }
-	if err := conn.SetDeadline(handshakeDeadline); err != nil { return nil, err }
+	handshakeDeadline := time.Now().Add(30 * time.Second)
+	if deadline, ok := ctx.Deadline(); ok && deadline.Before(handshakeDeadline) {
+		handshakeDeadline = deadline
+	}
+	if err := conn.SetDeadline(handshakeDeadline); err != nil {
+		return nil, err
+	}
 	cfg, err := files.Config(role)
 	if err != nil {
 		return nil, err
@@ -92,14 +96,21 @@ func OpenSession(
 		return nil, err
 	}
 	session.Negotiated = negotiated
-	expires := time.Now().Add(5*time.Minute)
-	if deadline, ok := ctx.Deadline(); ok && deadline.Before(expires) { expires=deadline }
+	expires := time.Now().Add(5 * time.Minute)
+	if deadline, ok := ctx.Deadline(); ok && deadline.Before(expires) {
+		expires = deadline
+	}
 	state := secured.ConnectionState()
-	if len(state.PeerCertificates)>0 && state.PeerCertificates[0].NotAfter.Before(expires) { expires=state.PeerCertificates[0].NotAfter }
-	session.expiresAt=expires
-	session.lifetime,session.cancel=context.WithDeadline(ctx,expires)
-	if err := secured.SetDeadline(expires); err != nil { _=session.Close(); return nil,err }
-	go func(){ <-session.lifetime.Done(); _=session.Close() }()
+	if len(state.PeerCertificates) > 0 && state.PeerCertificates[0].NotAfter.Before(expires) {
+		expires = state.PeerCertificates[0].NotAfter
+	}
+	session.expiresAt = expires
+	session.lifetime, session.cancel = context.WithDeadline(ctx, expires)
+	if err := secured.SetDeadline(expires); err != nil {
+		_ = session.Close()
+		return nil, err
+	}
+	go func() { <-session.lifetime.Done(); _ = session.Close() }()
 	return session, nil
 }
 
@@ -244,15 +255,19 @@ func (s *Session) Close() error {
 		return nil
 	}
 	var err error
-	s.closeOnce.Do(func(){
-		if s.cancel!=nil {s.cancel()}
-		err=s.conn.Close()
+	s.closeOnce.Do(func() {
+		if s.cancel != nil {
+			s.cancel()
+		}
+		err = s.conn.Close()
 	})
 	return err
 }
 
 func (s *Session) Context() context.Context {
-	if s!=nil && s.lifetime!=nil { return s.lifetime }
+	if s != nil && s.lifetime != nil {
+		return s.lifetime
+	}
 	return context.Background()
 }
 
@@ -269,9 +284,13 @@ func (s *Session) writeJSON(value any) error {
 	}
 	s.writerMu.Lock()
 	defer s.writerMu.Unlock()
-	deadline:=time.Now().Add(5*time.Second)
-	if !s.expiresAt.IsZero() && s.expiresAt.Before(deadline) { deadline=s.expiresAt }
-	if err:=s.conn.SetWriteDeadline(deadline);err!=nil {return err}
+	deadline := time.Now().Add(5 * time.Second)
+	if !s.expiresAt.IsZero() && s.expiresAt.Before(deadline) {
+		deadline = s.expiresAt
+	}
+	if err := s.conn.SetWriteDeadline(deadline); err != nil {
+		return err
+	}
 	var header [4]byte
 	binary.BigEndian.PutUint32(header[:], uint32(len(data)))
 	if err := writeAll(s.conn, header[:]); err != nil {
@@ -305,7 +324,9 @@ func (s *Session) readFrame() ([]byte, error) {
 }
 
 func decodeStrictFrame(data []byte, target any) error {
-	if err := validateTypedWire(target, data); err != nil { return err }
+	if err := validateTypedWire(target, data); err != nil {
+		return err
+	}
 	decoder := json.NewDecoder(bytes.NewReader(data))
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(target); err != nil {

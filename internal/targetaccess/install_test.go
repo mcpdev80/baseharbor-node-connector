@@ -24,7 +24,7 @@ func TestInstallEnrollmentBindsCertificateToLocalPrivateKey(t *testing.T) {
 		TrustBundleFile:      filepath.Join(dir, "identity", "ca.pem"),
 		ExpectedPeerIdentity: "spiffe://baseharbor/platform/core/control-plane",
 	}
-	response := EnrollmentResponse{Nonce:"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+	response := EnrollmentResponse{Nonce: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
 		ContractVersion: EnrollmentContractVersion,
 		Node: NodeIdentity{TenantID: "11111111-1111-4111-8111-111111111111",
 			NodeID: "node-a", TargetID: "target-a", Runtime: "docker",
@@ -73,7 +73,7 @@ func TestInstallEnrollmentRejectsServerAndAmbiguousPublicMaterial(t *testing.T) 
 			}
 			dir := t.TempDir()
 			files := TLSFiles{PrivateKeyFile: node.keyPath, CertificateFile: filepath.Join(dir, "node.crt"), TrustBundleFile: filepath.Join(dir, "ca.pem")}
-			response := EnrollmentResponse{Nonce:"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",ContractVersion: EnrollmentContractVersion, Node: NodeIdentity{TenantID: "11111111-1111-4111-8111-111111111111",NodeID: "node-a", TargetID: "target-a", Runtime: "docker", Identity: node.identity}, CertificatePEM: string(certPEM), TrustBundlePEM: string(caPEM), NotAfter: cert.NotAfter}
+			response := EnrollmentResponse{Nonce: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA", ContractVersion: EnrollmentContractVersion, Node: NodeIdentity{TenantID: "11111111-1111-4111-8111-111111111111", NodeID: "node-a", TargetID: "target-a", Runtime: "docker", Identity: node.identity}, CertificatePEM: string(certPEM), TrustBundlePEM: string(caPEM), NotAfter: cert.NotAfter}
 			switch variant {
 			case "extra-leaf":
 				response.CertificatePEM += string(certPEM)

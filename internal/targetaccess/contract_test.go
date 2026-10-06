@@ -2,9 +2,9 @@ package targetaccess
 
 import (
 	"encoding/json"
+	"github.com/mcpdev80/baseharbor-node-connector/internal/capability"
 	"testing"
 	"time"
-	"github.com/mcpdev80/baseharbor-node-connector/internal/capability"
 )
 
 func TestRequestValidationRejectsGenericCommandAndStaleRequests(t *testing.T) {
@@ -16,8 +16,8 @@ func TestRequestValidationRejectsGenericCommandAndStaleRequests(t *testing.T) {
 		CorrelationID:   "corr-1",
 		TargetID:        "target-a",
 		Operation:       OpContainerRestart,
-		IssuedAt: now,
-		DeadlineAt: now.Add(5*time.Minute),
+		IssuedAt:        now,
+		DeadlineAt:      now.Add(5 * time.Minute),
 		Payload:         json.RawMessage("{\"resource_id\":\"container-1\"}"),
 	}
 	if err := valid.Validate(now); err != nil {

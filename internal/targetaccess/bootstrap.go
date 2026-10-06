@@ -23,13 +23,13 @@ import (
 const maxEnrollmentResponseBytes = 1 << 20
 
 type BootstrapConfig struct {
-	EnrollmentURL          string
-	TrustBundleFile        string
-	AuthorizationFile              string
-	ExpectedServerIdentity string
-	ServerName             string
-	Timeout                time.Duration
-	RetainBootstrapAuthorization   bool
+	EnrollmentURL                string
+	TrustBundleFile              string
+	AuthorizationFile            string
+	ExpectedServerIdentity       string
+	ServerName                   string
+	Timeout                      time.Duration
+	RetainBootstrapAuthorization bool
 }
 
 func (c BootstrapConfig) Validate() error {
@@ -42,7 +42,7 @@ func (c BootstrapConfig) Validate() error {
 	}
 	for name, value := range map[string]string{
 		"trust_bundle_file":        c.TrustBundleFile,
-		"authorization_file":               c.AuthorizationFile,
+		"authorization_file":       c.AuthorizationFile,
 		"expected_server_identity": c.ExpectedServerIdentity,
 	} {
 		if strings.TrimSpace(value) == "" {
@@ -193,8 +193,8 @@ func bootstrapHTTPClient(cfg BootstrapConfig) (*http.Client, error) {
 }
 
 type BootstrapAuthorization struct {
-	Token string `json:"token"`
-	Nonce string `json:"nonce"`
+	Token     string    `json:"token"`
+	Nonce     string    `json:"nonce"`
 	ExpiresAt time.Time `json:"expires_at"`
 }
 
@@ -207,14 +207,16 @@ func readBootstrapAuthorization(path string, now time.Time) (BootstrapAuthorizat
 		return invalid()
 	}
 	file, err := os.Open(path)
-	if err != nil { return invalid() }
+	if err != nil {
+		return invalid()
+	}
 	defer file.Close()
 	opened, err := file.Stat()
 	if err != nil || !os.SameFile(info, opened) || !opened.Mode().IsRegular() || opened.Mode().Perm()&0o077 != 0 {
 		return invalid()
 	}
 	data, err := io.ReadAll(io.LimitReader(file, 8193))
-	if err != nil || len(data)>8192 || ValidateTargetAccessRecord("bootstrap_authorization", data) != nil {
+	if err != nil || len(data) > 8192 || ValidateTargetAccessRecord("bootstrap_authorization", data) != nil {
 		return invalid()
 	}
 	var authorization BootstrapAuthorization
@@ -301,7 +303,6 @@ func createEnrollmentCSR(privateKeyPath, identity string) (string, error) {
 	}
 	return string(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE REQUEST", Bytes: der})), nil
 }
-
 
 func validateEnrollmentBinding(expected, actual NodeIdentity) error {
 	if expected.TenantID != actual.TenantID || expected.NodeID != actual.NodeID ||

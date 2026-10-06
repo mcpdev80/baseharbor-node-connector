@@ -1,13 +1,13 @@
 package targetaccess
 
 import (
-	"encoding/json"
 	"context"
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
 	"crypto/x509"
 	"crypto/x509/pkix"
+	"encoding/json"
 	"encoding/pem"
 	"math/big"
 	"net"
@@ -98,9 +98,9 @@ func TestOpenSessionMutualTLSNegotiationAndRequestFrame(t *testing.T) {
 		CorrelationID:   "corr-1",
 		TargetID:        "target-a",
 		Operation:       OpCapabilities,
-		Payload: json.RawMessage("{}"),
-		IssuedAt: time.Now().UTC(),
-		DeadlineAt: time.Now().UTC().Add(5*time.Minute),
+		Payload:         json.RawMessage("{}"),
+		IssuedAt:        time.Now().UTC(),
+		DeadlineAt:      time.Now().UTC().Add(5 * time.Minute),
 	}
 	readResult := make(chan error, 1)
 	go func() {

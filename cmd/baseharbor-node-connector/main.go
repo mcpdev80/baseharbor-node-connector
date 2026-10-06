@@ -25,25 +25,25 @@ var tenantIDPattern = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[
 var identitySegment = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$`)
 
 type appConfig struct {
-	CoreAddress     string
-	ServerName      string
-	CoreIdentity    string
-	TenantID        string
-	TargetID        string
-	NodeID          string
-	NodeIdentity    string
-	StateRoot       string
-	StagingRoot     string
-	QuadletRoot     string
-	CertificateFile string
-	PrivateKeyFile  string
-	TrustBundleFile string
-	RevokedSerials  string
-	BootstrapURL    string
-	BootstrapCA     string
-	BootstrapAuthorization  string
-	RetainToken     bool
-	Sessions        int
+	CoreAddress            string
+	ServerName             string
+	CoreIdentity           string
+	TenantID               string
+	TargetID               string
+	NodeID                 string
+	NodeIdentity           string
+	StateRoot              string
+	StagingRoot            string
+	QuadletRoot            string
+	CertificateFile        string
+	PrivateKeyFile         string
+	TrustBundleFile        string
+	RevokedSerials         string
+	BootstrapURL           string
+	BootstrapCA            string
+	BootstrapAuthorization string
+	RetainToken            bool
+	Sessions               int
 }
 
 func main() {
@@ -93,12 +93,12 @@ func run(ctx context.Context, args []string, stderr io.Writer) error {
 			return errors.New("connector identity material is incomplete and no --bootstrap-url was configured")
 		}
 		_, err := targetaccess.BootstrapEnroll(ctx, targetaccess.BootstrapConfig{
-			EnrollmentURL:          cfg.BootstrapURL,
-			TrustBundleFile:        cfg.BootstrapCA,
-			AuthorizationFile:              cfg.BootstrapAuthorization,
-			ExpectedServerIdentity: cfg.CoreIdentity,
-			ServerName:             cfg.ServerName,
-			RetainBootstrapAuthorization:   cfg.RetainToken,
+			EnrollmentURL:                cfg.BootstrapURL,
+			TrustBundleFile:              cfg.BootstrapCA,
+			AuthorizationFile:            cfg.BootstrapAuthorization,
+			ExpectedServerIdentity:       cfg.CoreIdentity,
+			ServerName:                   cfg.ServerName,
+			RetainBootstrapAuthorization: cfg.RetainToken,
 		}, tlsFiles, identity)
 		if err != nil {
 			return fmt.Errorf("bootstrap connector identity: %w", err)

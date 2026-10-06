@@ -1,8 +1,8 @@
 package connector
 
 import (
-	"encoding/json"
 	"context"
+	"encoding/json"
 	"testing"
 	"time"
 
@@ -30,9 +30,9 @@ func TestTargetAccessCapabilitiesOperationReturnsNegotiatedProjection(t *testing
 		CorrelationID:   "corr-a",
 		TargetID:        "target-a",
 		Operation:       targetaccess.OpCapabilities,
-		Payload: json.RawMessage("{}"),
-		IssuedAt: time.Now().UTC(),
-		DeadlineAt: time.Now().UTC().Add(5*time.Minute),
+		Payload:         json.RawMessage("{}"),
+		IssuedAt:        time.Now().UTC(),
+		DeadlineAt:      time.Now().UTC().Add(5 * time.Minute),
 	})
 	if !response.Success {
 		t.Fatalf("capability request failed: %#v", response.Error)
