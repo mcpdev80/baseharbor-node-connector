@@ -103,7 +103,7 @@ Source checks are separate from exact-ref production/runtime qualification.
 
 The opt-in `runtime-validation/enrollment/**` push runs the separately built
 Connector against the exact public Core harness at
-`19959c85d73cf8d2104724cf2ec9d31558687eed`, with actual OpenBao 2.7.0, isolated
+`d798b43dd69ce954bee332fd397806618256de2b`, with actual OpenBao 2.7.0, isolated
 PostgreSQL storage/admission and either Docker or rootless Podman. It exchanges
 a persisted one-use Core grant over verified HTTPS, opens outbound mTLS, retains
 the local node key during explicit renewal, verifies live CA overlap and old-root
@@ -121,3 +121,10 @@ This expanded native qualification is pending. Earlier successful receipts used
 direct grant creation and remain explicitly outside the operator proof. The
 receipt still excludes the Core-authoritative Application lifecycle and release
 approval. A successful test must not be promoted to the full remote-target gate.
+
+The managed native slice also exercises the Core-bound immutable project adapter
+through this production enrollment: exact digest-verified staged bytes, Docker
+Compose or rootless Podman Quadlet apply, observed running state, explicit
+repair, destroy and foreign-resource preservation. This realizes already
+authorized project decisions; the complete Core Application planning, provider
+placement and secret binding journey remains a separate required release proof.
