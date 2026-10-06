@@ -1,6 +1,7 @@
 package connector
 
 import (
+	"path/filepath"
 	"testing"
 
 	"github.com/mcpdev80/baseharbor-node-connector/internal/capability"
@@ -9,7 +10,7 @@ import (
 )
 
 func TestTargetAccessCapabilitiesAreBoundToNodeAndRuntime(t *testing.T) {
-	service := &Service{TransportStateRoot: t.TempDir(),
+	service := &Service{TransportStateRoot: filepath.Join(t.TempDir(), "transport"),
 		Runtime:      bhruntime.Detection{Kind: bhruntime.Docker, Version: "test"},
 		Capabilities: capability.ForRuntime("docker"),
 	}
@@ -40,7 +41,7 @@ func TestTargetAccessCapabilitiesAreBoundToNodeAndRuntime(t *testing.T) {
 }
 
 func TestTargetAccessRejectsRuntimeIdentityMismatch(t *testing.T) {
-	service := &Service{TransportStateRoot: t.TempDir(),
+	service := &Service{TransportStateRoot: filepath.Join(t.TempDir(), "transport"),
 		Runtime:      bhruntime.Detection{Kind: bhruntime.Docker},
 		Capabilities: capability.ForRuntime("docker"),
 	}
@@ -54,7 +55,7 @@ func TestTargetAccessRejectsRuntimeIdentityMismatch(t *testing.T) {
 }
 
 func TestTargetAccessOperationAvailabilityUsesNegotiatedCapabilities(t *testing.T) {
-	service := &Service{TransportStateRoot: t.TempDir(),
+	service := &Service{TransportStateRoot: filepath.Join(t.TempDir(), "transport"),
 		Runtime:      bhruntime.Detection{Kind: bhruntime.Docker},
 		Capabilities: capability.ForRuntime("docker"),
 	}

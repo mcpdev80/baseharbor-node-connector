@@ -1,6 +1,7 @@
 package connector
 
 import (
+	"path/filepath"
 	"context"
 	"encoding/json"
 	"testing"
@@ -12,7 +13,7 @@ import (
 )
 
 func TestTargetAccessCapabilitiesOperationReturnsNegotiatedProjection(t *testing.T) {
-	service := &Service{TransportStateRoot: t.TempDir(),
+	service := &Service{TransportStateRoot: filepath.Join(t.TempDir(), "transport"),
 		Runtime:      bhruntime.Detection{Kind: bhruntime.Docker},
 		Capabilities: capability.ForRuntime("docker"),
 	}

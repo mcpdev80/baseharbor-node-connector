@@ -13,20 +13,20 @@ import (
 )
 
 type Config struct {
-	StagingRoot string
+	StagingRoot        string
 	TransportStateRoot string
-	QuadletRoot string
+	QuadletRoot        string
 }
 
 type Service struct {
-	Runtime      runtime.Detection
-	Capabilities []capability.Descriptor
-	Observation  *container.Adapter
-	Inventory    *container.Resources
-	Realizer     *container.Lifecycle
-	Compose      *compose.Adapter
-	Quadlet      *quadlet.Manager
-	Staging      *fssecure.Root
+	Runtime            runtime.Detection
+	Capabilities       []capability.Descriptor
+	Observation        *container.Adapter
+	Inventory          *container.Resources
+	Realizer           *container.Lifecycle
+	Compose            *compose.Adapter
+	Quadlet            *quadlet.Manager
+	Staging            *fssecure.Root
 	TransportStateRoot string
 }
 
@@ -49,14 +49,14 @@ func Open(ctx context.Context, cfg Config) (*Service, error) {
 	capabilities := capability.ForRuntime(string(detection.Kind))
 
 	return &Service{
-		Runtime:      detection,
-		Capabilities: capabilities,
-		Observation:  container.NewAdapter(detection.Kind),
-		Inventory:    container.NewResources(detection.Kind),
-		Realizer:     container.NewLifecycle(detection.Kind),
-		Compose:      compose.NewAdapter(detection.Kind, staging),
-		Quadlet:      quadletManager,
-		Staging:      staging,
+		Runtime:            detection,
+		Capabilities:       capabilities,
+		Observation:        container.NewAdapter(detection.Kind),
+		Inventory:          container.NewResources(detection.Kind),
+		Realizer:           container.NewLifecycle(detection.Kind),
+		Compose:            compose.NewAdapter(detection.Kind, staging),
+		Quadlet:            quadletManager,
+		Staging:            staging,
 		TransportStateRoot: cfg.TransportStateRoot,
 	}, nil
 }

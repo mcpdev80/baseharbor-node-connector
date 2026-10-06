@@ -7,6 +7,6 @@ import (
 	"os"
 )
 
-func lockAdmissionFile(context.Context,*os.File) error {
+func lockAdmissionFile(context.Context, *os.File) error {
 	return ErrAdmissionJournal
 }

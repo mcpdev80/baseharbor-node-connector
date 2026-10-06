@@ -62,9 +62,9 @@ func run(ctx context.Context, args []string, stderr io.Writer) error {
 	}
 
 	service, err := connector.Open(ctx, connector.Config{
-		StagingRoot: cfg.StagingRoot,
-		TransportStateRoot: filepath.Join(cfg.StateRoot,"transport"),
-		QuadletRoot: cfg.QuadletRoot,
+		StagingRoot:        cfg.StagingRoot,
+		TransportStateRoot: filepath.Join(cfg.StateRoot, "transport"),
+		QuadletRoot:        cfg.QuadletRoot,
 	})
 	if err != nil {
 		return err
@@ -193,7 +193,9 @@ func parseConfig(args []string, stderr io.Writer) (appConfig, error) {
 		return appConfig{}, errors.New("node identity must match the Core tenant/Target/node binding")
 	}
 	cfg.StateRoot, err = filepath.Abs(cfg.StateRoot)
-	if err != nil { return appConfig{}, errors.New("invalid connector state root") }
+	if err != nil {
+		return appConfig{}, errors.New("invalid connector state root")
+	}
 	if cfg.StagingRoot == "" {
 		cfg.StagingRoot = filepath.Join(cfg.StateRoot, "staging")
 	}
