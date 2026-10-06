@@ -121,6 +121,23 @@ func TestOpenSessionMutualTLSNegotiationAndRequestFrame(t *testing.T) {
 	if err := <-readResult; err != nil {
 		t.Fatal(err)
 	}
+	blocked := make(chan error, 1)
+	go func() { var next Request; blocked <- server.session.ReadRequest(&next) }()
+	started := time.Now()
+	if err := clientSession.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if time.Since(started) > time.Second {
+		t.Fatal("session retirement waited for a stalled TLS peer")
+	}
+	select {
+	case err := <-blocked:
+		if err == nil {
+			t.Fatal("retired session accepted another request")
+		}
+	case <-time.After(time.Second):
+		t.Fatal("session retirement left peer frame reader blocked")
+	}
 }
 
 type errUnexpectedRequest struct{}

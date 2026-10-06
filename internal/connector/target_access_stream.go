@@ -59,6 +59,17 @@ func (a *TargetAccess) ServeLogStream(ctx context.Context, session *targetaccess
 	if !a.capabilityAvailable(capability.LogRead) {
 		return errors.New("log streaming capability is unavailable")
 	}
+	// Quiet follow streams must observe Core disconnect even when the runtime
+	// produces no output. Logs have no inbound frames; any frame also retires
+	// this exclusive connection instead of creating a second control reader.
+	stopClose := context.AfterFunc(ctx, func() { _ = session.Close() })
+	defer stopClose()
+	go func() {
+		var unexpected targetaccess.StreamEvent
+		_ = session.ReadStreamEvent(&unexpected)
+		cancel()
+		_ = session.Close()
+	}()
 
 	sequence := uint64(1)
 	since := open.Logs.Since
@@ -200,6 +211,8 @@ func (a *TargetAccess) ServeTerminalStream(ctx context.Context, session *targeta
 	if open.ResumeAfter != 0 {
 		return errors.New("terminal stream replay is not implemented; resume_after must be zero")
 	}
+	stopClose := context.AfterFunc(ctx, func() { _ = session.Close() })
+	defer stopClose()
 
 	if err := a.admissions.AdmitTerminal(ctx, open); err != nil {
 		return err

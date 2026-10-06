@@ -284,7 +284,10 @@ func (s *Session) Close() error {
 		if s.cancel != nil {
 			s.cancel()
 		}
-		err = s.conn.Close()
+		// A retired stream must stop blocked frame and runtime readers now.
+		// TLS Close may wait five seconds for close_notify on a stalled peer.
+		_ = s.conn.SetDeadline(time.Now())
+		err = s.conn.NetConn().Close()
 	})
 	return err
 }
