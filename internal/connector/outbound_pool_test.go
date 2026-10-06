@@ -21,7 +21,7 @@ func TestOutboundPoolRejectsExcessiveSessionCount(t *testing.T) {
 				CertificateFile:      "node.crt",
 				PrivateKeyFile:       "node.key",
 				TrustBundleFile:      "ca.pem",
-				ExpectedPeerIdentity: "spiffe://baseharbor/core/control-plane",
+				ExpectedPeerIdentity: "spiffe://baseharbor/platform/core/control-plane",
 			},
 		},
 		Sessions: maxOutboundSessions + 1,

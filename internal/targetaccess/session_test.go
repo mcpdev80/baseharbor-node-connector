@@ -1,6 +1,7 @@
 package targetaccess
 
 import (
+	"encoding/json"
 	"context"
 	"crypto/ecdsa"
 	"crypto/elliptic"
@@ -26,8 +27,8 @@ type testTLSMaterial struct {
 
 func TestOpenSessionMutualTLSNegotiationAndRequestFrame(t *testing.T) {
 	caCert, caKey, caPEM := newTestCA(t)
-	core := newTestLeaf(t, caCert, caKey, caPEM, "spiffe://baseharbor/core/control-plane", big.NewInt(2))
-	node := newTestLeaf(t, caCert, caKey, caPEM, "spiffe://baseharbor/node/node-a", big.NewInt(3))
+	core := newTestLeaf(t, caCert, caKey, caPEM, "spiffe://baseharbor/platform/core/control-plane", big.NewInt(2))
+	node := newTestLeaf(t, caCert, caKey, caPEM, "spiffe://baseharbor/platform/connectors/11111111-1111-4111-8111-111111111111/target-a/node-a", big.NewInt(3))
 
 	serverConn, clientConn := net.Pipe()
 	defer serverConn.Close()
@@ -39,14 +40,14 @@ func TestOpenSessionMutualTLSNegotiationAndRequestFrame(t *testing.T) {
 	serverHello := Hello{
 		ContractVersions: []string{ContractVersion},
 		ProtocolVersions: []string{ProtocolVersion},
-		Node: NodeIdentity{
+		Node: NodeIdentity{TenantID: "11111111-1111-4111-8111-111111111111",
 			NodeID: "node-a", TargetID: "target-a", Runtime: "docker", Identity: node.identity,
 		},
 	}
 	clientHello := Hello{
 		ContractVersions: []string{ContractVersion},
 		ProtocolVersions: []string{ProtocolVersion},
-		Node: NodeIdentity{
+		Node: NodeIdentity{TenantID: "11111111-1111-4111-8111-111111111111",
 			NodeID: "core", TargetID: "target-a", Runtime: "docker", Identity: core.identity,
 		},
 	}
@@ -97,7 +98,9 @@ func TestOpenSessionMutualTLSNegotiationAndRequestFrame(t *testing.T) {
 		CorrelationID:   "corr-1",
 		TargetID:        "target-a",
 		Operation:       OpCapabilities,
-		IssuedAt:        time.Now().UTC(),
+		Payload: json.RawMessage("{}"),
+		IssuedAt: time.Now().UTC(),
+		DeadlineAt: time.Now().UTC().Add(5*time.Minute),
 	}
 	readResult := make(chan error, 1)
 	go func() {

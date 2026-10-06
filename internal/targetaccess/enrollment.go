@@ -2,6 +2,7 @@ package targetaccess
 
 import (
 	"crypto/x509"
+	"encoding/json"
 	"encoding/pem"
 	"errors"
 	"fmt"
@@ -12,6 +13,7 @@ import (
 const EnrollmentContractVersion = "baseharbor.target-access-enrollment/v1"
 
 type EnrollmentRequest struct {
+	TenantID        string `json:"tenant_id"`
 	ContractVersion string `json:"contract_version"`
 	NodeID          string `json:"node_id"`
 	TargetID        string `json:"target_id"`
@@ -21,6 +23,10 @@ type EnrollmentRequest struct {
 }
 
 func (r EnrollmentRequest) Validate() error {
+	data, err := json.Marshal(r)
+	if err != nil || ValidateTargetAccessRecord("enrollment_request", data) != nil {
+		return ErrTargetAccessWire
+	}
 	if r.ContractVersion != EnrollmentContractVersion {
 		return fmt.Errorf("unsupported enrollment contract version %q", r.ContractVersion)
 	}
@@ -54,11 +60,15 @@ type EnrollmentResponse struct {
 	Node            NodeIdentity `json:"node"`
 	CertificatePEM  string       `json:"certificate_pem"`
 	TrustBundlePEM  string       `json:"trust_bundle_pem"`
-	Nonce           string       `json:"nonce,omitempty"`
+	Nonce           string       `json:"nonce"`
 	NotAfter        time.Time    `json:"not_after"`
 }
 
 func (r EnrollmentResponse) Validate(now time.Time) error {
+	data, err := json.Marshal(r)
+	if err != nil || ValidateTargetAccessRecord("enrollment_response", data) != nil {
+		return ErrTargetAccessWire
+	}
 	if r.ContractVersion != EnrollmentContractVersion {
 		return fmt.Errorf("unsupported enrollment contract version %q", r.ContractVersion)
 	}

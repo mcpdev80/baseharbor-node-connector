@@ -19,7 +19,7 @@ func TestOutboundConfigRequiresExplicitCoreAndMTLSIdentity(t *testing.T) {
 			CertificateFile:      "node.crt",
 			PrivateKeyFile:       "node.key",
 			TrustBundleFile:      "ca.pem",
-			ExpectedPeerIdentity: "spiffe://baseharbor/core/control-plane",
+			ExpectedPeerIdentity: "spiffe://baseharbor/platform/core/control-plane",
 			ServerName:           "core.example",
 		},
 		DialTimeout: 5 * time.Second,
@@ -36,7 +36,7 @@ func TestOutboundConfigRejectsNegativeTiming(t *testing.T) {
 			CertificateFile:      "node.crt",
 			PrivateKeyFile:       "node.key",
 			TrustBundleFile:      "ca.pem",
-			ExpectedPeerIdentity: "spiffe://baseharbor/core/control-plane",
+			ExpectedPeerIdentity: "spiffe://baseharbor/platform/core/control-plane",
 		},
 		ReconnectInitial: -time.Second,
 	}

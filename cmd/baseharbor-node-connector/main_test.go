@@ -17,6 +17,7 @@ func TestParseConfigDerivesStableIdentityAndPrivatePaths(t *testing.T) {
 
 	var stderr bytes.Buffer
 	cfg, err := parseConfig([]string{
+		"--tenant-id", "11111111-1111-4111-8111-111111111111",
 		"--core", "core.example:9443",
 		"--target-id", "edge-a",
 		"--node-id", "node-1",
@@ -27,7 +28,7 @@ func TestParseConfigDerivesStableIdentityAndPrivatePaths(t *testing.T) {
 	if cfg.ServerName != "core.example" {
 		t.Fatalf("server name = %q", cfg.ServerName)
 	}
-	if cfg.NodeIdentity != "spiffe://baseharbor/target/edge-a/node/node-1" {
+	if cfg.NodeIdentity != "spiffe://baseharbor/platform/connectors/11111111-1111-4111-8111-111111111111/edge-a/node-1" {
 		t.Fatalf("node identity = %q", cfg.NodeIdentity)
 	}
 	if !strings.HasSuffix(cfg.PrivateKeyFile, filepath.Join("identity", "node.key")) {
@@ -39,6 +40,7 @@ func TestParseConfigRejectsAmbiguousIdentitySegments(t *testing.T) {
 	t.Setenv("XDG_DATA_HOME", t.TempDir())
 	var stderr bytes.Buffer
 	_, err := parseConfig([]string{
+		"--tenant-id", "11111111-1111-4111-8111-111111111111",
 		"--core", "core.example:9443",
 		"--target-id", "../escape",
 		"--node-id", "node-1",

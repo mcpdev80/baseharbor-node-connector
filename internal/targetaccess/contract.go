@@ -16,6 +16,7 @@ const (
 )
 
 type NodeIdentity struct {
+	TenantID   string `json:"tenant_id"`
 	NodeID     string `json:"node_id"`
 	TargetID   string `json:"target_id"`
 	Runtime    string `json:"runtime"`
@@ -24,6 +25,13 @@ type NodeIdentity struct {
 }
 
 func (n NodeIdentity) Validate() error {
+	data, err := json.Marshal(Hello{ContractVersions: []string{ContractVersion}, ProtocolVersions: []string{ProtocolVersion}, Node: n})
+	if err != nil || ValidateTargetAccessRecord("hello", data) != nil {
+		return ErrTargetAccessWire
+	}
+	if strings.HasPrefix(n.Identity, "spiffe://baseharbor/platform/connectors/") && n.Identity != "spiffe://baseharbor/platform/connectors/"+n.TenantID+"/"+n.TargetID+"/"+n.NodeID {
+		return ErrTargetAccessWire
+	}
 	if strings.TrimSpace(n.NodeID) == "" {
 		return errors.New("node_id is required")
 	}
@@ -47,6 +55,10 @@ type CapabilitySet struct {
 }
 
 func (c CapabilitySet) Validate() error {
+	data, err := json.Marshal(c)
+	if err != nil || ValidateTargetAccessRecord("capabilities", data) != nil {
+		return ErrTargetAccessWire
+	}
 	if c.ContractVersion != ContractVersion {
 		return fmt.Errorf("unsupported target-access contract version %q", c.ContractVersion)
 	}
@@ -108,14 +120,19 @@ type Request struct {
 	ContractVersion string          `json:"contract_version"`
 	ProtocolVersion string          `json:"protocol_version"`
 	RequestID       string          `json:"request_id"`
-	CorrelationID   string          `json:"correlation_id,omitempty"`
+	CorrelationID   string          `json:"correlation_id"`
 	TargetID        string          `json:"target_id"`
 	Operation       Operation       `json:"operation"`
 	IssuedAt        time.Time       `json:"issued_at"`
-	Payload         json.RawMessage `json:"payload,omitempty"`
+	DeadlineAt      time.Time       `json:"deadline_at"`
+	Payload         json.RawMessage `json:"payload"`
 }
 
 func (r Request) Validate(now time.Time) error {
+	data, err := json.Marshal(r)
+	if err != nil || ValidateTargetAccessRecord("request", data) != nil {
+		return ErrTargetAccessWire
+	}
 	if r.ContractVersion != ContractVersion {
 		return fmt.Errorf("unsupported target-access contract version %q", r.ContractVersion)
 	}
@@ -137,6 +154,9 @@ func (r Request) Validate(now time.Time) error {
 	if now.IsZero() {
 		now = time.Now().UTC()
 	}
+	if !r.DeadlineAt.After(now) || r.DeadlineAt.After(now.Add(30*time.Minute)) || !r.DeadlineAt.After(r.IssuedAt) {
+		return ErrTargetAccessWire
+	}
 	const skew = 5 * time.Minute
 	if r.IssuedAt.Before(now.Add(-skew)) || r.IssuedAt.After(now.Add(skew)) {
 		return errors.New("issued_at is outside the accepted clock-skew window")
@@ -148,7 +168,7 @@ type Response struct {
 	ContractVersion string          `json:"contract_version"`
 	ProtocolVersion string          `json:"protocol_version"`
 	RequestID       string          `json:"request_id"`
-	CorrelationID   string          `json:"correlation_id,omitempty"`
+	CorrelationID   string          `json:"correlation_id"`
 	Success         bool            `json:"success"`
 	Result          json.RawMessage `json:"result,omitempty"`
 	Error           *Error          `json:"error,omitempty"`
@@ -181,3 +201,12 @@ func FailureResponse(request Request, code, message string, retryable bool) Resp
 		Error:           &Error{Code: code, Message: message, Retryable: retryable},
 	}
 }
+
+type Cancel struct {
+	ContractVersion string `json:"contract_version"`
+	ProtocolVersion string `json:"protocol_version"`
+	RequestID string `json:"request_id"`
+	CorrelationID string `json:"correlation_id"`
+	Cancel bool `json:"cancel"`
+}
+

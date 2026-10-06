@@ -1,0 +1,1605 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/mcpdev80/baseharbor/blob/HEAD/contracts/targetaccess/v1/wire.schema.json",
+  "title": "BaseHarbor authenticated Target Access wire v1",
+  "description": "Canonical transport records; access-provider descriptors are a separate contract.",
+  "$defs": {
+    "node": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "tenant_id",
+        "node_id",
+        "target_id",
+        "runtime",
+        "identity"
+      ],
+      "properties": {
+        "tenant_id": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+        },
+        "node_id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$"
+        },
+        "target_id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$"
+        },
+        "runtime": {
+          "enum": [
+            "docker",
+            "podman"
+          ]
+        },
+        "identity": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512,
+          "pattern": "^spiffe://baseharbor/platform/(connectors|core)/[^?#@\\s]+$"
+        },
+        "instance_id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$"
+        }
+      }
+    },
+    "hello": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "contract_versions",
+        "protocol_versions",
+        "node"
+      ],
+      "properties": {
+        "contract_versions": {
+          "type": "array",
+          "items": {
+            "const": "baseharbor.target-access/v1"
+          },
+          "minItems": 1,
+          "maxItems": 1
+        },
+        "protocol_versions": {
+          "type": "array",
+          "items": {
+            "const": "1"
+          },
+          "minItems": 1,
+          "maxItems": 1
+        },
+        "node": {
+          "$ref": "#/$defs/node"
+        }
+      }
+    },
+    "capability": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "available"
+      ],
+      "properties": {
+        "name": {
+          "enum": [
+            "runtime.detect",
+            "runtime.resource.list",
+            "runtime.resource.inspect",
+            "runtime.image.list",
+            "runtime.image.pull",
+            "runtime.volume.list",
+            "runtime.volume.ensure",
+            "runtime.volume.remove",
+            "runtime.network.list",
+            "runtime.network.ensure",
+            "runtime.network.remove",
+            "runtime.container.start",
+            "runtime.container.stop",
+            "runtime.container.restart",
+            "runtime.container.remove",
+            "runtime.compose.apply",
+            "runtime.compose.destroy",
+            "runtime.quadlet.apply",
+            "runtime.quadlet.remove",
+            "runtime.quadlet.enable",
+            "runtime.quadlet.disable",
+            "runtime.logs.read",
+            "runtime.exec",
+            "runtime.terminal",
+            "runtime.metrics",
+            "connector.health",
+            "connector.capabilities",
+            "artifact.bundle.stage"
+          ]
+        },
+        "available": {
+          "type": "boolean"
+        },
+        "detail": {
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 512
+        }
+      }
+    },
+    "capabilities": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "contract_version",
+        "protocol_version",
+        "node",
+        "capabilities"
+      ],
+      "properties": {
+        "contract_version": {
+          "const": "baseharbor.target-access/v1"
+        },
+        "protocol_version": {
+          "const": "1"
+        },
+        "node": {
+          "$ref": "#/$defs/node"
+        },
+        "capabilities": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/capability"
+          },
+          "minItems": 1,
+          "maxItems": 32,
+          "uniqueItems": true
+        }
+      }
+    },
+    "empty": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [],
+      "properties": {}
+    },
+    "resource": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "resource_id"
+      ],
+      "properties": {
+        "resource_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        }
+      }
+    },
+    "resource_remove": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "resource_id"
+      ],
+      "properties": {
+        "resource_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "force": {
+          "type": "boolean"
+        }
+      }
+    },
+    "image_pull": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "reference"
+      ],
+      "properties": {
+        "reference": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        }
+      }
+    },
+    "volume_ensure": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$"
+        }
+      }
+    },
+    "volume_remove": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$"
+        },
+        "force": {
+          "type": "boolean"
+        }
+      }
+    },
+    "network_ensure": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$"
+        },
+        "driver": {
+          "enum": [
+            "bridge"
+          ]
+        }
+      }
+    },
+    "logs": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "resource_id"
+      ],
+      "properties": {
+        "resource_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "tail": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 10000
+        },
+        "since": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        }
+      }
+    },
+    "exec": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "resource_id",
+        "argv"
+      ],
+      "properties": {
+        "resource_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "argv": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 0,
+            "maxLength": 4096,
+            "pattern": "^[^\u0000]*$"
+          },
+          "minItems": 1,
+          "maxItems": 64
+        },
+        "workdir": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "environment": {
+          "type": "object",
+          "maxProperties": 64,
+          "propertyNames": {
+            "pattern": "^[A-Za-z_][A-Za-z0-9_]{0,127}$"
+          },
+          "additionalProperties": {
+            "type": "string",
+            "minLength": 0,
+            "maxLength": 4096
+          }
+        },
+        "timeout_seconds": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1800
+        }
+      }
+    },
+    "compose_apply": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "project_directory",
+        "files"
+      ],
+      "properties": {
+        "project_directory": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512,
+          "pattern": "^([A-Za-z0-9_-][A-Za-z0-9_.-]*|\\.[A-Za-z0-9_-][A-Za-z0-9_.-]*)(/([A-Za-z0-9_-][A-Za-z0-9_.-]*|\\.[A-Za-z0-9_-][A-Za-z0-9_.-]*))*$"
+        },
+        "files": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512,
+            "pattern": "^([A-Za-z0-9_-][A-Za-z0-9_.-]*|\\.[A-Za-z0-9_-][A-Za-z0-9_.-]*)(/([A-Za-z0-9_-][A-Za-z0-9_.-]*|\\.[A-Za-z0-9_-][A-Za-z0-9_.-]*))*$"
+          },
+          "minItems": 1,
+          "maxItems": 64
+        },
+        "env_file": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512,
+          "pattern": "^([A-Za-z0-9_-][A-Za-z0-9_.-]*|\\.[A-Za-z0-9_-][A-Za-z0-9_.-]*)(/([A-Za-z0-9_-][A-Za-z0-9_.-]*|\\.[A-Za-z0-9_-][A-Za-z0-9_.-]*))*$"
+        },
+        "build": {
+          "type": "boolean"
+        },
+        "force_recreate": {
+          "type": "boolean"
+        },
+        "remove_orphans": {
+          "type": "boolean"
+        },
+        "timeout_seconds": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1800
+        }
+      }
+    },
+    "compose_destroy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "project_directory",
+        "files"
+      ],
+      "properties": {
+        "project_directory": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512,
+          "pattern": "^([A-Za-z0-9_-][A-Za-z0-9_.-]*|\\.[A-Za-z0-9_-][A-Za-z0-9_.-]*)(/([A-Za-z0-9_-][A-Za-z0-9_.-]*|\\.[A-Za-z0-9_-][A-Za-z0-9_.-]*))*$"
+        },
+        "files": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512,
+            "pattern": "^([A-Za-z0-9_-][A-Za-z0-9_.-]*|\\.[A-Za-z0-9_-][A-Za-z0-9_.-]*)(/([A-Za-z0-9_-][A-Za-z0-9_.-]*|\\.[A-Za-z0-9_-][A-Za-z0-9_.-]*))*$"
+          },
+          "minItems": 1,
+          "maxItems": 64
+        },
+        "env_file": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512,
+          "pattern": "^([A-Za-z0-9_-][A-Za-z0-9_.-]*|\\.[A-Za-z0-9_-][A-Za-z0-9_.-]*)(/([A-Za-z0-9_-][A-Za-z0-9_.-]*|\\.[A-Za-z0-9_-][A-Za-z0-9_.-]*))*$"
+        },
+        "remove_orphans": {
+          "type": "boolean"
+        },
+        "volumes": {
+          "type": "boolean"
+        },
+        "timeout_seconds": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1800
+        }
+      }
+    },
+    "quadlet_apply": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "content"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$"
+        },
+        "content": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 262144
+        },
+        "enable": {
+          "type": "boolean"
+        }
+      }
+    },
+    "quadlet_name": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$"
+        }
+      }
+    },
+    "bundle_file": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "path",
+        "sha256",
+        "data"
+      ],
+      "properties": {
+        "path": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512,
+          "pattern": "^([A-Za-z0-9_-][A-Za-z0-9_.-]*|\\.[A-Za-z0-9_-][A-Za-z0-9_.-]*)(/([A-Za-z0-9_-][A-Za-z0-9_.-]*|\\.[A-Za-z0-9_-][A-Za-z0-9_.-]*))*$"
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "mode": {
+          "enum": [
+            384,
+            420,
+            448,
+            493
+          ]
+        },
+        "data": {
+          "type": "string",
+          "contentEncoding": "base64",
+          "maxLength": 4194304
+        }
+      }
+    },
+    "bundle": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "bundle_id",
+        "files"
+      ],
+      "properties": {
+        "bundle_id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$"
+        },
+        "files": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/bundle_file"
+          },
+          "minItems": 1,
+          "maxItems": 128
+        }
+      }
+    },
+    "problem": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "code",
+        "message"
+      ],
+      "properties": {
+        "code": {
+          "enum": [
+            "invalid_request",
+            "target_mismatch",
+            "capability_unavailable",
+            "operation_failed",
+            "timeout",
+            "cancelled",
+            "replay_conflict",
+            "replay_ambiguous",
+            "encode_result_failed"
+          ]
+        },
+        "message": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "retryable": {
+          "type": "boolean"
+        }
+      }
+    },
+    "response": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "contract_version",
+        "protocol_version",
+        "request_id",
+        "correlation_id",
+        "success"
+      ],
+      "properties": {
+        "contract_version": {
+          "const": "baseharbor.target-access/v1"
+        },
+        "protocol_version": {
+          "const": "1"
+        },
+        "request_id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$"
+        },
+        "correlation_id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$"
+        },
+        "success": {
+          "type": "boolean"
+        },
+        "result": {},
+        "error": {
+          "$ref": "#/$defs/problem"
+        }
+      },
+      "oneOf": [
+        {
+          "properties": {
+            "success": {
+              "const": true
+            }
+          },
+          "required": [
+            "result"
+          ],
+          "not": {
+            "required": [
+              "error"
+            ]
+          }
+        },
+        {
+          "properties": {
+            "success": {
+              "const": false
+            }
+          },
+          "required": [
+            "error"
+          ],
+          "not": {
+            "required": [
+              "result"
+            ]
+          }
+        }
+      ]
+    },
+    "cancel": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "contract_version",
+        "protocol_version",
+        "request_id",
+        "correlation_id",
+        "cancel"
+      ],
+      "properties": {
+        "contract_version": {
+          "const": "baseharbor.target-access/v1"
+        },
+        "protocol_version": {
+          "const": "1"
+        },
+        "request_id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$"
+        },
+        "correlation_id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$"
+        },
+        "cancel": {
+          "const": true
+        }
+      }
+    },
+    "enrollment_request": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "contract_version",
+        "tenant_id",
+        "node_id",
+        "target_id",
+        "runtime",
+        "csr_pem",
+        "nonce"
+      ],
+      "properties": {
+        "contract_version": {
+          "const": "baseharbor.target-access-enrollment/v1"
+        },
+        "tenant_id": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+        },
+        "node_id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$"
+        },
+        "target_id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$"
+        },
+        "runtime": {
+          "enum": [
+            "docker",
+            "podman"
+          ]
+        },
+        "csr_pem": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 65536
+        },
+        "nonce": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_-]{43}$"
+        }
+      }
+    },
+    "enrollment_response": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "contract_version",
+        "node",
+        "certificate_pem",
+        "trust_bundle_pem",
+        "nonce",
+        "not_after"
+      ],
+      "properties": {
+        "contract_version": {
+          "const": "baseharbor.target-access-enrollment/v1"
+        },
+        "node": {
+          "$ref": "#/$defs/node"
+        },
+        "certificate_pem": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 65536
+        },
+        "trust_bundle_pem": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 262144
+        },
+        "nonce": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_-]{43}$"
+        },
+        "not_after": {
+          "type": "string",
+          "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]{1,9})?Z$"
+        }
+      }
+    },
+    "bootstrap_authorization": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "token",
+        "nonce",
+        "expires_at"
+      ],
+      "properties": {
+        "token": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_-]{43}$"
+        },
+        "nonce": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_-]{43}$"
+        },
+        "expires_at": {
+          "type": "string",
+          "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]{1,9})?Z$"
+        }
+      }
+    },
+    "log_options": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [],
+      "properties": {
+        "tail": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 10000
+        },
+        "since": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "follow": {
+          "type": "boolean"
+        }
+      }
+    },
+    "terminal_options": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "rows",
+        "cols",
+        "argv"
+      ],
+      "properties": {
+        "rows": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 512
+        },
+        "cols": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 512
+        },
+        "user": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "workdir": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "environment": {
+          "type": "object",
+          "maxProperties": 64,
+          "propertyNames": {
+            "pattern": "^[A-Za-z_][A-Za-z0-9_]{0,127}$"
+          },
+          "additionalProperties": {
+            "type": "string",
+            "minLength": 0,
+            "maxLength": 4096
+          }
+        },
+        "argv": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 0,
+            "maxLength": 4096,
+            "pattern": "^[^\u0000]*$"
+          },
+          "minItems": 1,
+          "maxItems": 64
+        }
+      }
+    },
+    "stream_open": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "contract_version",
+        "protocol_version",
+        "stream_id",
+        "correlation_id",
+        "target_id",
+        "resource_id",
+        "kind",
+        "deadline_at"
+      ],
+      "properties": {
+        "contract_version": {
+          "const": "baseharbor.target-access/v1"
+        },
+        "protocol_version": {
+          "const": "1"
+        },
+        "stream_id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$"
+        },
+        "correlation_id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$"
+        },
+        "target_id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$"
+        },
+        "resource_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "kind": {
+          "enum": [
+            "logs",
+            "terminal"
+          ]
+        },
+        "deadline_at": {
+          "type": "string",
+          "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]{1,9})?Z$"
+        },
+        "resume_after": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "logs": {
+          "$ref": "#/$defs/log_options"
+        },
+        "terminal": {
+          "$ref": "#/$defs/terminal_options"
+        }
+      },
+      "oneOf": [
+        {
+          "properties": {
+            "kind": {
+              "const": "logs"
+            }
+          },
+          "required": [
+            "logs"
+          ],
+          "not": {
+            "required": [
+              "terminal"
+            ]
+          }
+        },
+        {
+          "properties": {
+            "kind": {
+              "const": "terminal"
+            }
+          },
+          "required": [
+            "terminal"
+          ],
+          "not": {
+            "anyOf": [
+              {
+                "required": [
+                  "logs"
+                ]
+              },
+              {
+                "required": [
+                  "resume_after"
+                ]
+              }
+            ]
+          }
+        }
+      ]
+    },
+    "stream_event": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "contract_version",
+        "protocol_version",
+        "stream_id",
+        "correlation_id",
+        "sequence",
+        "observed_at",
+        "type"
+      ],
+      "properties": {
+        "contract_version": {
+          "const": "baseharbor.target-access/v1"
+        },
+        "protocol_version": {
+          "const": "1"
+        },
+        "stream_id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$"
+        },
+        "correlation_id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$"
+        },
+        "sequence": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "observed_at": {
+          "type": "string",
+          "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]{1,9})?Z$"
+        },
+        "type": {
+          "enum": [
+            "ready",
+            "data",
+            "resize",
+            "exit",
+            "error",
+            "end"
+          ]
+        },
+        "data": {
+          "type": "string",
+          "contentEncoding": "base64",
+          "minLength": 4,
+          "maxLength": 21848
+        },
+        "rows": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 512
+        },
+        "cols": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 512
+        },
+        "exit_code": {
+          "type": "integer",
+          "minimum": -1,
+          "maximum": 255
+        },
+        "message": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        }
+      },
+      "oneOf": [
+        {
+          "properties": {
+            "type": {
+              "const": "ready"
+            }
+          },
+          "not": {
+            "anyOf": [
+              {
+                "required": [
+                  "data"
+                ]
+              },
+              {
+                "required": [
+                  "rows"
+                ]
+              },
+              {
+                "required": [
+                  "cols"
+                ]
+              },
+              {
+                "required": [
+                  "exit_code"
+                ]
+              },
+              {
+                "required": [
+                  "message"
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "properties": {
+            "type": {
+              "const": "data"
+            }
+          },
+          "required": [
+            "data"
+          ],
+          "not": {
+            "anyOf": [
+              {
+                "required": [
+                  "rows"
+                ]
+              },
+              {
+                "required": [
+                  "cols"
+                ]
+              },
+              {
+                "required": [
+                  "exit_code"
+                ]
+              },
+              {
+                "required": [
+                  "message"
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "properties": {
+            "type": {
+              "const": "resize"
+            }
+          },
+          "required": [
+            "rows",
+            "cols"
+          ],
+          "not": {
+            "anyOf": [
+              {
+                "required": [
+                  "data"
+                ]
+              },
+              {
+                "required": [
+                  "exit_code"
+                ]
+              },
+              {
+                "required": [
+                  "message"
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "properties": {
+            "type": {
+              "const": "exit"
+            }
+          },
+          "required": [
+            "exit_code"
+          ],
+          "not": {
+            "anyOf": [
+              {
+                "required": [
+                  "data"
+                ]
+              },
+              {
+                "required": [
+                  "rows"
+                ]
+              },
+              {
+                "required": [
+                  "cols"
+                ]
+              },
+              {
+                "required": [
+                  "message"
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "properties": {
+            "type": {
+              "const": "error"
+            }
+          },
+          "required": [
+            "message"
+          ],
+          "not": {
+            "anyOf": [
+              {
+                "required": [
+                  "data"
+                ]
+              },
+              {
+                "required": [
+                  "rows"
+                ]
+              },
+              {
+                "required": [
+                  "cols"
+                ]
+              },
+              {
+                "required": [
+                  "exit_code"
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "properties": {
+            "type": {
+              "const": "end"
+            }
+          },
+          "not": {
+            "anyOf": [
+              {
+                "required": [
+                  "data"
+                ]
+              },
+              {
+                "required": [
+                  "rows"
+                ]
+              },
+              {
+                "required": [
+                  "cols"
+                ]
+              },
+              {
+                "required": [
+                  "exit_code"
+                ]
+              },
+              {
+                "required": [
+                  "message"
+                ]
+              }
+            ]
+          }
+        }
+      ]
+    },
+    "request": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "contract_version",
+        "protocol_version",
+        "request_id",
+        "correlation_id",
+        "target_id",
+        "operation",
+        "issued_at",
+        "deadline_at"
+      ],
+      "properties": {
+        "contract_version": {
+          "const": "baseharbor.target-access/v1"
+        },
+        "protocol_version": {
+          "const": "1"
+        },
+        "request_id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$"
+        },
+        "correlation_id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$"
+        },
+        "target_id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$"
+        },
+        "operation": {
+          "enum": [
+            "runtime.detect",
+            "runtime.resource.list",
+            "runtime.resource.inspect",
+            "runtime.image.list",
+            "runtime.image.pull",
+            "runtime.volume.list",
+            "runtime.volume.ensure",
+            "runtime.volume.remove",
+            "runtime.network.list",
+            "runtime.network.ensure",
+            "runtime.network.remove",
+            "runtime.container.start",
+            "runtime.container.stop",
+            "runtime.container.restart",
+            "runtime.container.remove",
+            "runtime.compose.apply",
+            "runtime.compose.destroy",
+            "runtime.quadlet.apply",
+            "runtime.quadlet.remove",
+            "runtime.quadlet.enable",
+            "runtime.quadlet.disable",
+            "runtime.logs.read",
+            "runtime.exec",
+            "runtime.metrics",
+            "connector.health",
+            "connector.capabilities",
+            "artifact.bundle.stage"
+          ]
+        },
+        "issued_at": {
+          "type": "string",
+          "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]{1,9})?Z$"
+        },
+        "deadline_at": {
+          "type": "string",
+          "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]{1,9})?Z$"
+        },
+        "payload": {}
+      },
+      "oneOf": [
+        {
+          "properties": {
+            "operation": {
+              "const": "runtime.detect"
+            },
+            "payload": {
+              "$ref": "#/$defs/empty"
+            }
+          }
+        },
+        {
+          "properties": {
+            "operation": {
+              "const": "runtime.resource.list"
+            },
+            "payload": {
+              "$ref": "#/$defs/empty"
+            }
+          }
+        },
+        {
+          "properties": {
+            "operation": {
+              "const": "runtime.resource.inspect"
+            },
+            "payload": {
+              "$ref": "#/$defs/resource"
+            }
+          },
+          "required": [
+            "payload"
+          ]
+        },
+        {
+          "properties": {
+            "operation": {
+              "const": "runtime.image.list"
+            },
+            "payload": {
+              "$ref": "#/$defs/empty"
+            }
+          }
+        },
+        {
+          "properties": {
+            "operation": {
+              "const": "runtime.image.pull"
+            },
+            "payload": {
+              "$ref": "#/$defs/image_pull"
+            }
+          },
+          "required": [
+            "payload"
+          ]
+        },
+        {
+          "properties": {
+            "operation": {
+              "const": "runtime.volume.list"
+            },
+            "payload": {
+              "$ref": "#/$defs/empty"
+            }
+          }
+        },
+        {
+          "properties": {
+            "operation": {
+              "const": "runtime.volume.ensure"
+            },
+            "payload": {
+              "$ref": "#/$defs/volume_ensure"
+            }
+          },
+          "required": [
+            "payload"
+          ]
+        },
+        {
+          "properties": {
+            "operation": {
+              "const": "runtime.volume.remove"
+            },
+            "payload": {
+              "$ref": "#/$defs/volume_remove"
+            }
+          },
+          "required": [
+            "payload"
+          ]
+        },
+        {
+          "properties": {
+            "operation": {
+              "const": "runtime.network.list"
+            },
+            "payload": {
+              "$ref": "#/$defs/empty"
+            }
+          }
+        },
+        {
+          "properties": {
+            "operation": {
+              "const": "runtime.network.ensure"
+            },
+            "payload": {
+              "$ref": "#/$defs/network_ensure"
+            }
+          },
+          "required": [
+            "payload"
+          ]
+        },
+        {
+          "properties": {
+            "operation": {
+              "const": "runtime.network.remove"
+            },
+            "payload": {
+              "$ref": "#/$defs/resource"
+            }
+          },
+          "required": [
+            "payload"
+          ]
+        },
+        {
+          "properties": {
+            "operation": {
+              "const": "runtime.container.start"
+            },
+            "payload": {
+              "$ref": "#/$defs/resource"
+            }
+          },
+          "required": [
+            "payload"
+          ]
+        },
+        {
+          "properties": {
+            "operation": {
+              "const": "runtime.container.stop"
+            },
+            "payload": {
+              "$ref": "#/$defs/resource"
+            }
+          },
+          "required": [
+            "payload"
+          ]
+        },
+        {
+          "properties": {
+            "operation": {
+              "const": "runtime.container.restart"
+            },
+            "payload": {
+              "$ref": "#/$defs/resource"
+            }
+          },
+          "required": [
+            "payload"
+          ]
+        },
+        {
+          "properties": {
+            "operation": {
+              "const": "runtime.container.remove"
+            },
+            "payload": {
+              "$ref": "#/$defs/resource_remove"
+            }
+          },
+          "required": [
+            "payload"
+          ]
+        },
+        {
+          "properties": {
+            "operation": {
+              "const": "runtime.compose.apply"
+            },
+            "payload": {
+              "$ref": "#/$defs/compose_apply"
+            }
+          },
+          "required": [
+            "payload"
+          ]
+        },
+        {
+          "properties": {
+            "operation": {
+              "const": "runtime.compose.destroy"
+            },
+            "payload": {
+              "$ref": "#/$defs/compose_destroy"
+            }
+          },
+          "required": [
+            "payload"
+          ]
+        },
+        {
+          "properties": {
+            "operation": {
+              "const": "runtime.quadlet.apply"
+            },
+            "payload": {
+              "$ref": "#/$defs/quadlet_apply"
+            }
+          },
+          "required": [
+            "payload"
+          ]
+        },
+        {
+          "properties": {
+            "operation": {
+              "const": "runtime.quadlet.remove"
+            },
+            "payload": {
+              "$ref": "#/$defs/quadlet_name"
+            }
+          },
+          "required": [
+            "payload"
+          ]
+        },
+        {
+          "properties": {
+            "operation": {
+              "const": "runtime.quadlet.enable"
+            },
+            "payload": {
+              "$ref": "#/$defs/quadlet_name"
+            }
+          },
+          "required": [
+            "payload"
+          ]
+        },
+        {
+          "properties": {
+            "operation": {
+              "const": "runtime.quadlet.disable"
+            },
+            "payload": {
+              "$ref": "#/$defs/quadlet_name"
+            }
+          },
+          "required": [
+            "payload"
+          ]
+        },
+        {
+          "properties": {
+            "operation": {
+              "const": "runtime.logs.read"
+            },
+            "payload": {
+              "$ref": "#/$defs/logs"
+            }
+          },
+          "required": [
+            "payload"
+          ]
+        },
+        {
+          "properties": {
+            "operation": {
+              "const": "runtime.exec"
+            },
+            "payload": {
+              "$ref": "#/$defs/exec"
+            }
+          },
+          "required": [
+            "payload"
+          ]
+        },
+        {
+          "properties": {
+            "operation": {
+              "const": "runtime.metrics"
+            },
+            "payload": {
+              "$ref": "#/$defs/resource"
+            }
+          },
+          "required": [
+            "payload"
+          ]
+        },
+        {
+          "properties": {
+            "operation": {
+              "const": "connector.health"
+            },
+            "payload": {
+              "$ref": "#/$defs/empty"
+            }
+          }
+        },
+        {
+          "properties": {
+            "operation": {
+              "const": "connector.capabilities"
+            },
+            "payload": {
+              "$ref": "#/$defs/empty"
+            }
+          }
+        },
+        {
+          "properties": {
+            "operation": {
+              "const": "artifact.bundle.stage"
+            },
+            "payload": {
+              "$ref": "#/$defs/bundle"
+            }
+          },
+          "required": [
+            "payload"
+          ]
+        }
+      ]
+    }
+  }
+}

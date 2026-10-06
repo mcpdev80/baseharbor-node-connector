@@ -11,7 +11,7 @@ import (
 
 func TestInstallEnrollmentBindsCertificateToLocalPrivateKey(t *testing.T) {
 	caCert, caKey, caPEM := newTestCA(t)
-	node := newTestLeaf(t, caCert, caKey, caPEM, "spiffe://baseharbor/node/node-a", big.NewInt(10), x509.ExtKeyUsageClientAuth)
+	node := newTestLeaf(t, caCert, caKey, caPEM, "spiffe://baseharbor/platform/connectors/11111111-1111-4111-8111-111111111111/target-a/node-a", big.NewInt(10), x509.ExtKeyUsageClientAuth)
 
 	certPEM, err := os.ReadFile(node.certPath)
 	if err != nil {
@@ -22,11 +22,11 @@ func TestInstallEnrollmentBindsCertificateToLocalPrivateKey(t *testing.T) {
 		CertificateFile:      filepath.Join(dir, "identity", "node.crt"),
 		PrivateKeyFile:       node.keyPath,
 		TrustBundleFile:      filepath.Join(dir, "identity", "ca.pem"),
-		ExpectedPeerIdentity: "spiffe://baseharbor/core/control-plane",
+		ExpectedPeerIdentity: "spiffe://baseharbor/platform/core/control-plane",
 	}
-	response := EnrollmentResponse{
+	response := EnrollmentResponse{Nonce:"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
 		ContractVersion: EnrollmentContractVersion,
-		Node: NodeIdentity{
+		Node: NodeIdentity{TenantID: "11111111-1111-4111-8111-111111111111",
 			NodeID: "node-a", TargetID: "target-a", Runtime: "docker",
 			Identity: node.identity,
 		},
@@ -62,7 +62,7 @@ func TestInstallEnrollmentRejectsServerAndAmbiguousPublicMaterial(t *testing.T) 
 			if variant == "dual-purpose" {
 				usages = append(usages, x509.ExtKeyUsageServerAuth)
 			}
-			node := newTestLeaf(t, caCert, caKey, caPEM, "spiffe://baseharbor/node/node-a", big.NewInt(20), usages...)
+			node := newTestLeaf(t, caCert, caKey, caPEM, "spiffe://baseharbor/platform/connectors/11111111-1111-4111-8111-111111111111/target-a/node-a", big.NewInt(20), usages...)
 			certPEM, err := os.ReadFile(node.certPath)
 			if err != nil {
 				t.Fatal(err)
@@ -73,7 +73,7 @@ func TestInstallEnrollmentRejectsServerAndAmbiguousPublicMaterial(t *testing.T) 
 			}
 			dir := t.TempDir()
 			files := TLSFiles{PrivateKeyFile: node.keyPath, CertificateFile: filepath.Join(dir, "node.crt"), TrustBundleFile: filepath.Join(dir, "ca.pem")}
-			response := EnrollmentResponse{ContractVersion: EnrollmentContractVersion, Node: NodeIdentity{NodeID: "node-a", TargetID: "target-a", Runtime: "docker", Identity: node.identity}, CertificatePEM: string(certPEM), TrustBundlePEM: string(caPEM), NotAfter: cert.NotAfter}
+			response := EnrollmentResponse{Nonce:"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",ContractVersion: EnrollmentContractVersion, Node: NodeIdentity{TenantID: "11111111-1111-4111-8111-111111111111",NodeID: "node-a", TargetID: "target-a", Runtime: "docker", Identity: node.identity}, CertificatePEM: string(certPEM), TrustBundlePEM: string(caPEM), NotAfter: cert.NotAfter}
 			switch variant {
 			case "extra-leaf":
 				response.CertificatePEM += string(certPEM)

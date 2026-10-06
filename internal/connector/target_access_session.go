@@ -15,6 +15,10 @@ func (a *TargetAccess) ServeSession(ctx context.Context, session *targetaccess.S
 	if session == nil {
 		return errors.New("target access session is required")
 	}
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	stop := context.AfterFunc(session.Context(), cancel)
+	defer stop()
 	for {
 		select {
 		case <-ctx.Done():
@@ -43,6 +47,10 @@ func (a *TargetAccess) ServeAnySession(ctx context.Context, session *targetacces
 	if session == nil {
 		return errors.New("target access session is required")
 	}
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	stop := context.AfterFunc(session.Context(), cancel)
+	defer stop()
 	for {
 		select {
 		case <-ctx.Done():

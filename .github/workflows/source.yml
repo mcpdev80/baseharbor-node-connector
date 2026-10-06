@@ -1,0 +1,73 @@
+name: Connector Source Conformance
+on:
+  push:
+    branches:
+      - feature/v0.4.23-core-integration
+      - 'runtime-validation/source/**'
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: connector-source-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  source:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/setup-go@v7
+        with:
+          go-version: '1.26.2'
+          cache: false
+      - name: Fetch immutable canonical public Core artifacts
+        uses: actions/checkout@v7.0.1
+        with:
+          repository: mcpdev80/baseharbor
+          ref: 3b7023224559720c67d89370cdcefa6736be79f6
+          path: .core-contract-source
+          persist-credentials: false
+      - name: Verify canonical consumer source lock
+        run: |
+          set -euo pipefail
+          test "$(git -C .core-contract-source rev-parse HEAD)" = 3b7023224559720c67d89370cdcefa6736be79f6
+          cmp internal/targetaccess/canonical/wire.schema.json .core-contract-source/contracts/targetaccess/v1/wire.schema.json
+          cmp internal/targetaccess/canonical/wire.golden.json .core-contract-source/contracts/targetaccess/v1/wire.golden.json
+          echo 'c5457a58f8c7cb36086dee40c73af7da890e31f010c69197bce4b240e867b1d9  internal/targetaccess/canonical/wire.schema.json' | sha256sum -c -
+          echo '9d6aa4d46f52fb7f718e94ab2bce9dba8583a100e7b9c368c58270f2690c3d68  internal/targetaccess/canonical/wire.golden.json' | sha256sum -c -
+      - name: Format candidate and retain reviewable source formatting
+        shell: bash
+        run: |
+          set -euo pipefail
+          gofmt -w cmd internal
+          python3 - <<'PY'
+          import base64, json, subprocess
+          paths=subprocess.check_output(['git','diff','--name-only','--','cmd','internal'],text=True).splitlines()
+          for path in paths:
+              data=open(path,'rb').read()
+              encoded=base64.b64encode(data).decode()
+              print('CONNECTOR_FORMAT_META:'+json.dumps({'path':path,'bytes':len(data)}))
+              for offset in range(0,len(encoded),3072):
+                  print('CONNECTOR_FORMAT_CHUNK:'+json.dumps({'path':path,'offset':offset,'data':encoded[offset:offset+3072]}))
+          PY
+      - name: Verify module checksums
+        run: go mod verify
+      - name: Run conformance and complete Race Detector suite
+        run: go test -race -p 2 ./... -count=1 -v
+      - name: Vet and build CLI
+        run: |
+          go vet -p 2 ./...
+          go build -trimpath -o "$RUNNER_TEMP/baseharbor-node-connector" ./cmd/baseharbor-node-connector
+      - name: Retain exact source receipt
+        run: |
+          python3 - <<'PY'
+          import json, os, subprocess
+          result={'schema':'baseharbor.private-source-receipt/v1','repository':os.environ['GITHUB_REPOSITORY'],'commit':subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip(),'core_commit':'3b7023224559720c67d89370cdcefa6736be79f6','wire_schema_sha256':'c5457a58f8c7cb36086dee40c73af7da890e31f010c69197bce4b240e867b1d9','source_result':'success','runtime_evidence':False,'release_eligible':False,'formatting_applied':bool(subprocess.check_output(['git','diff','--name-only','--','cmd','internal'],text=True).strip()),'run_id':os.environ['GITHUB_RUN_ID'],'run_attempt':os.environ['GITHUB_RUN_ATTEMPT']}
+          open('connector-source-receipt.json','w').write(json.dumps(result,indent=2)+'\n')
+          PY
+      - uses: actions/upload-artifact@v6
+        with:
+          name: connector-source-receipt
+          path: connector-source-receipt.json
+          if-no-files-found: error

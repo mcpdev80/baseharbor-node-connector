@@ -28,6 +28,9 @@ func (s *Service) TargetAccess(identity targetaccess.NodeIdentity) (*TargetAcces
 	if err := identity.Validate(); err != nil {
 		return nil, err
 	}
+	if identity.Identity != "spiffe://baseharbor/platform/connectors/"+identity.TenantID+"/"+identity.TargetID+"/"+identity.NodeID {
+		return nil, targetaccess.ErrTargetAccessWire
+	}
 	if identity.Runtime != string(s.Runtime.Kind) {
 		return nil, fmt.Errorf("node identity runtime %q does not match detected runtime %q", identity.Runtime, s.Runtime.Kind)
 	}
@@ -50,7 +53,7 @@ func (a *TargetAccess) Capabilities() targetaccess.CapabilitySet {
 
 func (a *TargetAccess) Execute(ctx context.Context, request targetaccess.Request) targetaccess.Response {
 	if err := request.Validate(time.Now().UTC()); err != nil {
-		return targetaccess.FailureResponse(request, "invalid_request", err.Error(), false)
+		return targetaccess.FailureResponse(request, "invalid_request", "Invalid or expired typed request.", false)
 	}
 	if request.TargetID != a.identity.TargetID {
 		return targetaccess.FailureResponse(request, "target_mismatch", "request target does not match connector target identity", false)
@@ -59,13 +62,15 @@ func (a *TargetAccess) Execute(ctx context.Context, request targetaccess.Request
 		return targetaccess.FailureResponse(request, "capability_unavailable", "requested operation is not available on this connector", false)
 	}
 
-	result, err := a.execute(ctx, request.Operation, request.Payload)
+	requestCtx, cancel := context.WithDeadline(ctx, request.DeadlineAt)
+	defer cancel()
+	result, err := a.execute(requestCtx, request.Operation, request.Payload)
 	if err != nil {
-		return targetaccess.FailureResponse(request, "operation_failed", err.Error(), false)
+		return targetaccess.FailureResponse(request, "operation_failed", "The bounded runtime operation failed.", false)
 	}
 	raw, err := json.Marshal(result)
 	if err != nil {
-		return targetaccess.FailureResponse(request, "encode_result_failed", err.Error(), false)
+		return targetaccess.FailureResponse(request, "encode_result_failed", "The runtime result could not be encoded.", false)
 	}
 	return targetaccess.SuccessResponse(request, raw)
 }

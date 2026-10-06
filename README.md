@@ -85,6 +85,7 @@ Required runtime configuration:
 
 ```text
 --core HOST:PORT
+--tenant-id CORE_TENANT_UUID
 --target-id TARGET
 ```
 
@@ -102,7 +103,7 @@ identity/ca.pem
 
 If identity material is incomplete, startup fails closed unless an explicit
 HTTPS bootstrap endpoint is configured. Bootstrap requires a pinned bootstrap
-CA and one-time token file. The connector generates its private Ed25519 key
+CA and a private Core-issued JSON authorization file. The connector generates its private Ed25519 key
 locally; the private key never leaves the host.
 
 Example initial enrollment:
@@ -110,17 +111,18 @@ Example initial enrollment:
 ```bash
 baseharbor-node-connector \
   --core core.example:9443 \
+  --tenant-id 11111111-1111-4111-8111-111111111111 \
   --target-id edge-a \
   --bootstrap-url https://core.example:9444/v1/node-enrollment \
   --bootstrap-ca /etc/baseharbor/bootstrap-ca.pem \
-  --bootstrap-token-file /run/credentials/baseharbor-bootstrap-token
+  --bootstrap-authorization-file /run/credentials/baseharbor-bootstrap-authorization.json
 ```
 
-The bootstrap token is consumed after successful enrollment by default.
+The Core-issued token/nonce grant is consumed once by Core; the local authorization file is removed after successful enrollment by default.
 
 Configuration can also be supplied through the corresponding
 `BASEHARBOR_CONNECTOR_*` environment variables. Secret values themselves are
-not accepted as flags; bootstrap uses a token file path.
+not accepted as flags; bootstrap uses an authorization file path.
 
 ## Current state
 
@@ -129,9 +131,9 @@ Target Access v1 is implemented with:
 - typed bounded runtime operations;
 - authenticated capability/version negotiation;
 - TLS 1.3 mTLS with explicit peer identity;
-- CSR enrollment, certificate renewal and revocation handling;
+- CSR enrollment and certificate installation; revoked serial checks at new handshakes;
 - traversal-safe artifact staging with SHA-256 verification;
-- log and PTY streaming with bounded reconnect/resume semantics;
+- bounded log streaming with retained cursors; PTY streams reject replay and reattachment;
 - outbound-only concurrent session pooling;
 - an executable connector daemon.
 
@@ -150,4 +152,30 @@ for runtime or terminal support.
 
 Enrollment destinations must use HTTPS with pinned server identity, without
 embedded credentials, query parameters or fragments. Bootstrap credentials are
-read exclusively from the protected token file.
+read exclusively from the protected authorization file.
+
+## Pinned Core wire and bootstrap binding
+
+The canonical schema and synthetic golden records are acquired from immutable
+public Core commit `3b7023224559720c67d89370cdcefa6736be79f6`. Their source lock and
+SHA-256 digests are in `internal/targetaccess/canonical/source-lock.json`; source
+CI compares both files byte for byte with that commit. Contract version remains
+v1 and is a pre-freeze draft. Production frames reject unknown fields, duplicate
+JSON keys, missing correlation/deadlines and malformed typed payloads.
+
+Configure `--tenant-id` with the Core tenant UUID. Node identity is
+`spiffe://baseharbor/platform/connectors/<tenant>/<target>/<node>`.
+Core identity is `spiffe://baseharbor/platform/core/control-plane`.
+The private `--bootstrap-authorization-file` contains the Core-issued JSON
+`{"token":"...","nonce":"...","expires_at":"..."}`; it is not a bare token.
+The Connector uses that nonce unchanged, rejects expired/unbounded or non-private
+files, generates its own private key and sends only its signed CSR. The consumed
+authorization file is removed after successful installation by default.
+A signing/interruption failure requires a fresh Core authorization.
+
+Requests and streams carry bounded absolute deadlines. Sessions and writes are
+bounded, streamed chunks are at most 16 KiB, and terminal input rejects sequence
+or correlation mismatch. This source change does not prove production Core
+enrollment routing, durable destructive admission, active revocation/rotation
+or remote Docker/rootless Podman cleanup. Those integration requirements remain
+open before a live remote capability or release approval can be claimed.

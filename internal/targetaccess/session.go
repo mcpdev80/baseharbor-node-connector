@@ -13,6 +13,7 @@ import (
 	"net"
 	"strings"
 	"sync"
+	"time"
 )
 
 const DefaultMaxFrameBytes = 4 << 20
@@ -23,6 +24,10 @@ type Session struct {
 	writerMu   sync.Mutex
 	maxFrame   uint32
 	Negotiated Negotiated
+	lifetime context.Context
+	cancel context.CancelFunc
+	closeOnce sync.Once
+	expiresAt time.Time
 }
 
 func OpenSession(
@@ -36,6 +41,9 @@ func OpenSession(
 	if conn == nil {
 		return nil, errors.New("connection is required")
 	}
+	handshakeDeadline := time.Now().Add(30*time.Second)
+	if deadline, ok := ctx.Deadline(); ok && deadline.Before(handshakeDeadline) { handshakeDeadline=deadline }
+	if err := conn.SetDeadline(handshakeDeadline); err != nil { return nil, err }
 	cfg, err := files.Config(role)
 	if err != nil {
 		return nil, err
@@ -52,6 +60,10 @@ func OpenSession(
 	if err := secured.HandshakeContext(ctx); err != nil {
 		_ = secured.Close()
 		return nil, fmt.Errorf("mTLS handshake: %w", err)
+	}
+	if maxFrameBytes > DefaultMaxFrameBytes {
+		_ = secured.Close()
+		return nil, ErrTargetAccessWire
 	}
 	if maxFrameBytes == 0 {
 		maxFrameBytes = DefaultMaxFrameBytes
@@ -70,12 +82,24 @@ func OpenSession(
 		_ = secured.Close()
 		return nil, errors.New("target-access hello identity does not match authenticated TLS peer identity")
 	}
+	if remote.Node.TenantID != local.Node.TenantID || remote.Node.TargetID != local.Node.TargetID || remote.Node.Runtime != local.Node.Runtime {
+		_ = secured.Close()
+		return nil, errors.New("authenticated Target Access scope does not match the session")
+	}
 	negotiated, err := Negotiate(local, remote)
 	if err != nil {
 		_ = secured.Close()
 		return nil, err
 	}
 	session.Negotiated = negotiated
+	expires := time.Now().Add(5*time.Minute)
+	if deadline, ok := ctx.Deadline(); ok && deadline.Before(expires) { expires=deadline }
+	state := secured.ConnectionState()
+	if len(state.PeerCertificates)>0 && state.PeerCertificates[0].NotAfter.Before(expires) { expires=state.PeerCertificates[0].NotAfter }
+	session.expiresAt=expires
+	session.lifetime,session.cancel=context.WithDeadline(ctx,expires)
+	if err := secured.SetDeadline(expires); err != nil { _=session.Close(); return nil,err }
+	go func(){ <-session.lifetime.Done(); _=session.Close() }()
 	return session, nil
 }
 
@@ -219,11 +243,24 @@ func (s *Session) Close() error {
 	if s == nil || s.conn == nil {
 		return nil
 	}
-	return s.conn.Close()
+	var err error
+	s.closeOnce.Do(func(){
+		if s.cancel!=nil {s.cancel()}
+		err=s.conn.Close()
+	})
+	return err
+}
+
+func (s *Session) Context() context.Context {
+	if s!=nil && s.lifetime!=nil { return s.lifetime }
+	return context.Background()
 }
 
 func (s *Session) writeJSON(value any) error {
 	data, err := json.Marshal(value)
+	if err == nil {
+		err = validateTypedWire(value, data)
+	}
 	if err != nil {
 		return err
 	}
@@ -232,6 +269,9 @@ func (s *Session) writeJSON(value any) error {
 	}
 	s.writerMu.Lock()
 	defer s.writerMu.Unlock()
+	deadline:=time.Now().Add(5*time.Second)
+	if !s.expiresAt.IsZero() && s.expiresAt.Before(deadline) { deadline=s.expiresAt }
+	if err:=s.conn.SetWriteDeadline(deadline);err!=nil {return err}
 	var header [4]byte
 	binary.BigEndian.PutUint32(header[:], uint32(len(data)))
 	if err := writeAll(s.conn, header[:]); err != nil {
@@ -265,6 +305,7 @@ func (s *Session) readFrame() ([]byte, error) {
 }
 
 func decodeStrictFrame(data []byte, target any) error {
+	if err := validateTypedWire(target, data); err != nil { return err }
 	decoder := json.NewDecoder(bytes.NewReader(data))
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(target); err != nil {
@@ -292,4 +333,33 @@ func writeAll(writer io.Writer, data []byte) error {
 		data = data[n:]
 	}
 	return nil
+}
+
+func validateTypedWire(value any, data []byte) error {
+	var record string
+	switch value.(type) {
+	case Hello, *Hello:
+		record = "hello"
+	case CapabilitySet, *CapabilitySet:
+		record = "capabilities"
+	case Cancel, *Cancel:
+		record = "cancel"
+	case Request, *Request:
+		record = "request"
+	case Response, *Response:
+		record = "response"
+	case StreamOpen, *StreamOpen:
+		record = "stream_open"
+	case StreamEvent, *StreamEvent:
+		record = "stream_event"
+	case EnrollmentRequest, *EnrollmentRequest:
+		record = "enrollment_request"
+	case EnrollmentResponse, *EnrollmentResponse:
+		record = "enrollment_response"
+	case BootstrapAuthorization, *BootstrapAuthorization:
+		record = "bootstrap_authorization"
+	default:
+		return ErrTargetAccessWire
+	}
+	return ValidateTargetAccessRecord(record, data)
 }

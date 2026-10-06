@@ -68,3 +68,7 @@ The wire transfer/enrollment protocol remains intentionally undefined until Base
 The legacy agent's generic `runtime_command` and `workspace_command` channels are deliberately not exposed.
 
 BaseHarbor invokes named typed capabilities instead.
+
+Canonical acquisition and bootstrap JSON/tenant requirements follow the
+[pinned Core wire boundary](../README.md#pinned-core-wire-and-bootstrap-binding).
+Source checks are separate from exact-ref production/runtime qualification.

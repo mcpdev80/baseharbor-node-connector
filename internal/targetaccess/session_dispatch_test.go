@@ -1,10 +1,10 @@
 package targetaccess
 
 import (
+	"encoding/json"
 	"bufio"
 	"bytes"
 	"encoding/binary"
-	"encoding/json"
 	"testing"
 	"time"
 )
@@ -14,9 +14,12 @@ func TestReadInboundFrameClassifiesRequestAndStreamOpen(t *testing.T) {
 		ContractVersion: ContractVersion,
 		ProtocolVersion: ProtocolVersion,
 		RequestID:       "req-1",
+		CorrelationID: "corr-a",
 		TargetID:        "target-a",
 		Operation:       OpCapabilities,
-		IssuedAt:        time.Now().UTC(),
+		Payload: json.RawMessage("{}"),
+		IssuedAt: time.Now().UTC(),
+		DeadlineAt: time.Now().UTC().Add(5*time.Minute),
 	}
 	session := testReadSession(t, request)
 	frame, err := session.ReadInboundFrame()
@@ -27,7 +30,7 @@ func TestReadInboundFrameClassifiesRequestAndStreamOpen(t *testing.T) {
 		t.Fatalf("unexpected request frame: %#v", frame)
 	}
 
-	open := StreamOpen{
+	open := StreamOpen{DeadlineAt: time.Now().UTC().Add(5*time.Minute), CorrelationID: "corr-a",
 		ContractVersion: ContractVersion,
 		ProtocolVersion: ProtocolVersion,
 		StreamID:        "stream-1",

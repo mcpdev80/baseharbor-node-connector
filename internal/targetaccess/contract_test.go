@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"testing"
 	"time"
+	"github.com/mcpdev80/baseharbor-node-connector/internal/capability"
 )
 
 func TestRequestValidationRejectsGenericCommandAndStaleRequests(t *testing.T) {
@@ -15,7 +16,8 @@ func TestRequestValidationRejectsGenericCommandAndStaleRequests(t *testing.T) {
 		CorrelationID:   "corr-1",
 		TargetID:        "target-a",
 		Operation:       OpContainerRestart,
-		IssuedAt:        now,
+		IssuedAt: now,
+		DeadlineAt: now.Add(5*time.Minute),
 		Payload:         json.RawMessage("{\"resource_id\":\"container-1\"}"),
 	}
 	if err := valid.Validate(now); err != nil {
@@ -36,12 +38,12 @@ func TestRequestValidationRejectsGenericCommandAndStaleRequests(t *testing.T) {
 }
 
 func TestCapabilitySetRequiresExactContractVersionsAndNodeIdentity(t *testing.T) {
-	set := CapabilitySet{
+	set := CapabilitySet{Capabilities: capability.Baseline(),
 		ContractVersion: ContractVersion,
 		ProtocolVersion: ProtocolVersion,
-		Node: NodeIdentity{
+		Node: NodeIdentity{TenantID: "11111111-1111-4111-8111-111111111111",
 			NodeID: "node-a", TargetID: "target-a", Runtime: "docker",
-			Identity: "spiffe://baseharbor/node/node-a",
+			Identity: "spiffe://baseharbor/platform/connectors/11111111-1111-4111-8111-111111111111/target-a/node-a",
 		},
 	}
 	if err := set.Validate(); err != nil {

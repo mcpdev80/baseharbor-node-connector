@@ -18,13 +18,13 @@ func TestEnrollmentRequestAcceptsSignedCSRAndCarriesNoPrivateKey(t *testing.T) {
 		t.Fatal(err)
 	}
 	csrPEM := string(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE REQUEST", Bytes: csrDER}))
-	request := EnrollmentRequest{
+	request := EnrollmentRequest{TenantID:"11111111-1111-4111-8111-111111111111",
 		ContractVersion: EnrollmentContractVersion,
 		NodeID:          "node-a",
 		TargetID:        "target-a",
 		Runtime:         "docker",
 		CSRPEM:          csrPEM,
-		Nonce:           "nonce-a",
+		Nonce:           "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
 	}
 	if err := request.Validate(); err != nil {
 		t.Fatalf("valid enrollment request rejected: %v", err)
@@ -45,7 +45,7 @@ func TestEnrollmentCSRRejectsAmbiguousPEM(t *testing.T) {
 	}
 	csr := string(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE REQUEST", Bytes: raw}))
 	for _, material := range []string{csr + csr, "SECRET\n" + csr, csr + "SECRET"} {
-		request := EnrollmentRequest{ContractVersion: EnrollmentContractVersion, NodeID: "node-a", TargetID: "target-a", Runtime: "docker", Nonce: "nonce", CSRPEM: material}
+		request := EnrollmentRequest{TenantID:"11111111-1111-4111-8111-111111111111",ContractVersion: EnrollmentContractVersion, NodeID: "node-a", TargetID: "target-a", Runtime: "docker", Nonce: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA", CSRPEM: material}
 		if err := request.Validate(); err == nil {
 			t.Fatal("ambiguous CSR accepted")
 		}

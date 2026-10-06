@@ -44,6 +44,12 @@ func (a *TargetAccess) ServeLogStream(ctx context.Context, session *targetaccess
 	if err := open.Validate(); err != nil {
 		return err
 	}
+	if !open.DeadlineAt.After(time.Now()) || open.DeadlineAt.After(time.Now().Add(5*time.Minute)) {
+		return targetaccess.ErrTargetAccessWire
+	}
+	ctx, cancel := context.WithDeadline(ctx, open.DeadlineAt)
+	defer cancel()
+	defer session.Close()
 	if open.Kind != targetaccess.StreamLogs {
 		return errors.New("stream is not a log stream")
 	}
@@ -114,7 +120,7 @@ func (a *TargetAccess) ServeLogStream(ctx context.Context, session *targetaccess
 		sequence++
 	}
 
-	buffer := make([]byte, 32*1024)
+	buffer := make([]byte, targetaccess.TargetAccessMaxStreamDataBytes)
 	for {
 		n, readErr := reader.Read(buffer)
 		if n > 0 {
@@ -129,13 +135,13 @@ func (a *TargetAccess) ServeLogStream(ctx context.Context, session *targetaccess
 				event := streamEvent(open, sequence, targetaccess.StreamEnd, nil, "")
 				return send(event)
 			}
-			event := streamEvent(open, sequence, targetaccess.StreamError, nil, readErr.Error())
+			event := streamEvent(open, sequence, targetaccess.StreamError, nil, "The runtime stream failed.")
 			_ = send(event)
 			return readErr
 		}
 		select {
 		case <-ctx.Done():
-			event := streamEvent(open, sequence, targetaccess.StreamEnd, nil, ctx.Err().Error())
+			event := streamEvent(open, sequence, targetaccess.StreamEnd, nil, "")
 			_ = send(event)
 			return ctx.Err()
 		default:
@@ -176,6 +182,12 @@ func (a *TargetAccess) ServeTerminalStream(ctx context.Context, session *targeta
 	if err := open.Validate(); err != nil {
 		return err
 	}
+	if !open.DeadlineAt.After(time.Now()) || open.DeadlineAt.After(time.Now().Add(5*time.Minute)) {
+		return targetaccess.ErrTargetAccessWire
+	}
+	ctx, cancel := context.WithDeadline(ctx, open.DeadlineAt)
+	defer cancel()
+	defer session.Close()
 	if open.Kind != targetaccess.StreamTerminal {
 		return errors.New("stream is not a terminal stream")
 	}
@@ -210,6 +222,7 @@ func (a *TargetAccess) ServeTerminalStream(ctx context.Context, session *targeta
 
 	inputErr := make(chan error, 1)
 	go func() {
+		expectedSequence := uint64(1)
 		for {
 			var event targetaccess.StreamEvent
 			if err := session.ReadStreamEvent(&event); err != nil {
@@ -217,10 +230,12 @@ func (a *TargetAccess) ServeTerminalStream(ctx context.Context, session *targeta
 				inputErr <- err
 				return
 			}
-			if event.StreamID != open.StreamID {
-				inputErr <- errors.New("terminal input event stream_id mismatch")
+			if event.StreamID != open.StreamID || event.CorrelationID != open.CorrelationID || event.Sequence != expectedSequence {
+				_ = terminal.Close()
+				inputErr <- errors.New("terminal input scope or sequence mismatch")
 				return
 			}
+			expectedSequence++
 			switch event.Type {
 			case targetaccess.StreamData:
 				if len(event.Data) > 0 {
@@ -230,7 +245,7 @@ func (a *TargetAccess) ServeTerminalStream(ctx context.Context, session *targeta
 					}
 				}
 			case targetaccess.StreamResize:
-				if event.Rows <= 0 || event.Cols <= 0 || event.Rows > 65535 || event.Cols > 65535 {
+				if event.Rows <= 0 || event.Cols <= 0 || event.Rows > 512 || event.Cols > 512 {
 					inputErr <- errors.New("invalid terminal resize dimensions")
 					return
 				}
@@ -263,7 +278,7 @@ func (a *TargetAccess) ServeTerminalStream(ctx context.Context, session *targeta
 		return session.WriteStreamEvent(event)
 	}
 
-	buffer := make([]byte, 32*1024)
+	buffer := make([]byte, targetaccess.TargetAccessMaxStreamDataBytes)
 	for {
 		n, readErr := terminal.Read(buffer)
 		if n > 0 {
@@ -277,7 +292,7 @@ func (a *TargetAccess) ServeTerminalStream(ctx context.Context, session *targeta
 		select {
 		case err := <-inputErr:
 			if err != nil && !errors.Is(err, io.EOF) {
-				_ = send(streamEvent(open, sequence, targetaccess.StreamError, nil, err.Error()))
+				_ = send(streamEvent(open, sequence, targetaccess.StreamError, nil, "Terminal input failed."))
 				return err
 			}
 			_ = terminal.Close()
@@ -288,8 +303,9 @@ func (a *TargetAccess) ServeTerminalStream(ctx context.Context, session *targeta
 		case result := <-waitResult:
 			event := streamEvent(open, sequence, targetaccess.StreamExit, nil, "")
 			event.ExitCode = &result.exitCode
-			if result.err != nil {
-				event.Message = result.err.Error()
+			if result.err != nil && result.exitCode == 0 {
+				event.ExitCode = new(int)
+				*event.ExitCode = -1
 			}
 			return send(event)
 		default:
@@ -301,21 +317,22 @@ func (a *TargetAccess) ServeTerminalStream(ctx context.Context, session *targeta
 				case result := <-waitResult:
 					event := streamEvent(open, sequence, targetaccess.StreamExit, nil, "")
 					event.ExitCode = &result.exitCode
-					if result.err != nil {
-						event.Message = result.err.Error()
+					if result.err != nil && result.exitCode == 0 {
+						event.ExitCode = new(int)
+						*event.ExitCode = -1
 					}
 					return send(event)
 				case <-ctx.Done():
 					return ctx.Err()
 				}
 			}
-			_ = send(streamEvent(open, sequence, targetaccess.StreamError, nil, readErr.Error()))
+			_ = send(streamEvent(open, sequence, targetaccess.StreamError, nil, "The runtime stream failed."))
 			return readErr
 		}
 
 		select {
 		case <-ctx.Done():
-			_ = send(streamEvent(open, sequence, targetaccess.StreamEnd, nil, ctx.Err().Error()))
+			_ = send(streamEvent(open, sequence, targetaccess.StreamEnd, nil, ""))
 			return ctx.Err()
 		default:
 		}
