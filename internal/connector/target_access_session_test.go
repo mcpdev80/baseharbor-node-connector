@@ -1,9 +1,9 @@
 package connector
 
 import (
-	"path/filepath"
 	"context"
 	"encoding/json"
+	"path/filepath"
 	"testing"
 	"time"
 
