@@ -21,12 +21,16 @@ func TestParseConfigDerivesStableIdentityAndPrivatePaths(t *testing.T) {
 		"--core", "core.example:9443",
 		"--target-id", "edge-a",
 		"--node-id", "node-1",
+		"--runtime", "podman",
 	}, &stderr)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if cfg.ServerName != "core.example" {
 		t.Fatalf("server name = %q", cfg.ServerName)
+	}
+	if cfg.Runtime != "podman" {
+		t.Fatal("explicit enrolled runtime was lost")
 	}
 	if cfg.NodeIdentity != "spiffe://baseharbor/platform/connectors/11111111-1111-4111-8111-111111111111/edge-a/node-1" {
 		t.Fatalf("node identity = %q", cfg.NodeIdentity)

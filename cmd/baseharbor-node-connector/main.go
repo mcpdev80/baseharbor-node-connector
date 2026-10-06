@@ -15,6 +15,7 @@ import (
 	"syscall"
 
 	"github.com/mcpdev80/baseharbor-node-connector/internal/connector"
+	bhruntime "github.com/mcpdev80/baseharbor-node-connector/internal/runtime"
 	"github.com/mcpdev80/baseharbor-node-connector/internal/targetaccess"
 )
 
@@ -25,6 +26,7 @@ var tenantIDPattern = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[
 var identitySegment = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$`)
 
 type appConfig struct {
+	Runtime                string
 	CoreAddress            string
 	ServerName             string
 	CoreIdentity           string
@@ -62,6 +64,7 @@ func run(ctx context.Context, args []string, stderr io.Writer) error {
 	}
 
 	service, err := connector.Open(ctx, connector.Config{
+		Runtime:            bhruntime.Kind(cfg.Runtime),
 		StagingRoot:        cfg.StagingRoot,
 		TransportStateRoot: filepath.Join(cfg.StateRoot, "transport"),
 		QuadletRoot:        cfg.QuadletRoot,
@@ -136,6 +139,7 @@ func parseConfig(args []string, stderr io.Writer) (appConfig, error) {
 	cfg := appConfig{}
 	fs := flag.NewFlagSet("baseharbor-node-connector", flag.ContinueOnError)
 	fs.SetOutput(stderr)
+	fs.StringVar(&cfg.Runtime, "runtime", env("BASEHARBOR_CONNECTOR_RUNTIME", ""), "enrolled Docker or Podman runtime; unavailable selections never fall back")
 	fs.StringVar(&cfg.CoreAddress, "core", env("BASEHARBOR_CONNECTOR_CORE", ""), "BaseHarbor Core host:port")
 	fs.StringVar(&cfg.ServerName, "server-name", env("BASEHARBOR_CONNECTOR_SERVER_NAME", ""), "TLS server DNS name")
 	fs.StringVar(&cfg.CoreIdentity, "core-identity", env("BASEHARBOR_CONNECTOR_CORE_IDENTITY", defaultCoreIdentity), "expected Core certificate identity")
@@ -160,6 +164,9 @@ func parseConfig(args []string, stderr io.Writer) (appConfig, error) {
 	}
 	if fs.NArg() != 0 {
 		return appConfig{}, errors.New("unexpected positional arguments")
+	}
+	if cfg.Runtime != "" && cfg.Runtime != "docker" && cfg.Runtime != "podman" {
+		return appConfig{}, errors.New("--runtime must be docker or podman")
 	}
 
 	cfg.TenantID = strings.TrimSpace(cfg.TenantID)

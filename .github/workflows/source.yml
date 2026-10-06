@@ -4,6 +4,7 @@ on:
     branches:
       - feature/v0.4.23-core-integration
       - 'runtime-validation/source/**'
+      - 'runtime-validation/transport/**'
   pull_request:
   workflow_dispatch:
 permissions:
@@ -71,4 +72,82 @@ jobs:
         with:
           name: connector-source-receipt
           path: connector-source-receipt.json
+          if-no-files-found: error
+
+  transport:
+    if: github.event_name == 'push' && startsWith(github.ref_name, 'runtime-validation/transport/')
+    name: Actual encrypted transport · ${{ matrix.runtime }}
+    runs-on: ${{ matrix.runtime == 'podman' && 'ubuntu-26.04' || 'ubuntu-latest' }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      max-parallel: 2
+      matrix:
+        runtime: [docker, podman]
+    env:
+      BASEHARBOR_CONNECTOR_RUNTIME_ACCEPTANCE: 'true'
+      BASEHARBOR_CONNECTOR_RUNTIME_KIND: ${{ matrix.runtime }}
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/setup-go@v7
+        with:
+          go-version: '1.26.2'
+          cache: false
+      - name: Prepare rootless Podman
+        if: matrix.runtime == 'podman'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y podman
+          test "$(podman info --format '{{.Host.Security.Rootless}}')" = true
+      - name: Checkout immutable public transport harness
+        uses: actions/checkout@v7.0.1
+        with:
+          repository: mcpdev80/baseharbor
+          ref: e4e5bf1d4cc7e079d431263d29b7f573343ca20b
+          path: .core-transport-source
+          persist-credentials: false
+      - name: Build exact private Connector and pin actual runtime fixture
+        id: fixture
+        shell: bash
+        run: |
+          set -euo pipefail
+          binary="$RUNNER_TEMP/baseharbor-node-connector"
+          go build -trimpath -o "$binary" ./cmd/baseharbor-node-connector
+          echo "BASEHARBOR_TEST_CONNECTOR_BIN=$binary" >> "$GITHUB_ENV"
+          "$BASEHARBOR_CONNECTOR_RUNTIME_KIND" pull docker.io/library/alpine:3.23
+          image="$("$BASEHARBOR_CONNECTOR_RUNTIME_KIND" image inspect docker.io/library/alpine:3.23 --format '{{index .RepoDigests 0}}')"
+          [[ "$image" == *@sha256:* ]]
+          echo "BASEHARBOR_CONNECTOR_RUNTIME_IMAGE=$image" >> "$GITHUB_ENV"
+      - name: Exercise actual outbound encrypted transport primitives
+        id: transport
+        working-directory: .core-transport-source
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = e4e5bf1d4cc7e079d431263d29b7f573343ca20b
+          go test -race ./internal/targetsession -run '^TestConnectorRuntimeTransport$' -count=1 -v | tee "$RUNNER_TEMP/transport.log"
+      - name: Verify exact runtime fixture cleanup
+        id: cleanup
+        if: always()
+        run: test -z "$("$BASEHARBOR_CONNECTOR_RUNTIME_KIND" ps -aq --filter label=baseharbor.transport-qualification=true)"
+      - name: Retain exact primitive scope and result
+        if: always()
+        env:
+          TRANSPORT_RESULT: ${{ steps.transport.outcome }}
+          CLEANUP_RESULT: ${{ steps.cleanup.outcome }}
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import hashlib,json,os,pathlib,subprocess
+          binary=pathlib.Path(os.environ.get('BASEHARBOR_TEST_CONNECTOR_BIN','/nonexistent'))
+          result={'schema':'baseharbor.private-transport-receipt/v1','repository':os.environ['GITHUB_REPOSITORY'],'commit':subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip(),'core_commit':'e4e5bf1d4cc7e079d431263d29b7f573343ca20b','connector_binary_sha256':hashlib.sha256(binary.read_bytes()).hexdigest() if binary.is_file() else None,'runtime':os.environ['BASEHARBOR_CONNECTOR_RUNTIME_KIND'],'runtime_image':os.environ.get('BASEHARBOR_CONNECTOR_RUNTIME_IMAGE'),'result':os.environ['TRANSPORT_RESULT'],'cleanup_result':os.environ['CLEANUP_RESULT'],'run_id':os.environ['GITHUB_RUN_ID'],'run_attempt':os.environ['GITHUB_RUN_ATTEMPT'],'test_authority':True,'scope':'encrypted inventory/container lifecycle/exec/PTY input-resize-exit/follow cancellation','release_eligible':False}
+          pathlib.Path('transport-receipt.json').write_text(json.dumps(result,indent=2)+'\n')
+          PY
+      - uses: actions/upload-artifact@v6
+        if: always()
+        with:
+          name: connector-transport-${{ matrix.runtime }}
+          path: |
+            transport-receipt.json
+            ${{ runner.temp }}/transport.log
           if-no-files-found: error

@@ -2,6 +2,16 @@
 
 The Node Connector can realize deployments for remote Docker/Podman targets, but it never decides deployment intent.
 
+Configure `--runtime docker` or `--runtime podman` (or
+`BASEHARBOR_CONNECTOR_RUNTIME`) to bind startup to the enrolled Target's engine.
+An unavailable explicit selection fails closed and never probes another engine.
+Omitting the selection preserves detection for existing installations; the
+authenticated Core session still rejects a different enrolled runtime.
+
+Captured process stdout and stderr are each limited to 256 KiB. Overflow
+cancels the producer and returns a typed failure without a partial successful
+result. Continuous output uses bounded stream frames and reader backpressure.
+
 ## Control flow
 
 ```text

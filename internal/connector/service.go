@@ -13,6 +13,7 @@ import (
 )
 
 type Config struct {
+	Runtime            runtime.Kind
 	StagingRoot        string
 	TransportStateRoot string
 	QuadletRoot        string
@@ -31,7 +32,14 @@ type Service struct {
 }
 
 func Open(ctx context.Context, cfg Config) (*Service, error) {
-	detection, err := runtime.NewDetector().Detect(ctx)
+	detector := runtime.NewDetector()
+	var detection runtime.Detection
+	var err error
+	if cfg.Runtime == "" {
+		detection, err = detector.Detect(ctx)
+	} else {
+		detection, err = detector.DetectKind(ctx, cfg.Runtime)
+	}
 	if err != nil {
 		return nil, fmt.Errorf("detect runtime: %w", err)
 	}
