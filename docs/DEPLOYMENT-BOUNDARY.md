@@ -98,3 +98,19 @@ BaseHarbor invokes named typed capabilities instead.
 Canonical acquisition and bootstrap JSON/tenant requirements follow the
 [pinned Core wire boundary](../README.md#pinned-core-wire-and-bootstrap-binding).
 Source checks are separate from exact-ref production/runtime qualification.
+
+## Native managed enrollment qualification
+
+The opt-in `runtime-validation/enrollment/**` push runs the separately built
+Connector against the exact public Core harness at
+`fa9d504afdef46e93c7a2f2d5a578db408ae6c40`, with actual OpenBao 2.7.0, isolated
+PostgreSQL storage/admission and either Docker or rootless Podman. It exchanges
+a persisted one-use Core grant over verified HTTPS, opens outbound mTLS, retains
+the local node key during explicit renewal, verifies live CA overlap and old-root
+retirement, and denies invocation/reconnection after persisted revocation.
+Native inventory and one bounded typed exec use an exact owned runtime fixture.
+
+The Core grant is created directly by the production authority in this fixture;
+this does not qualify an operator OIDC authorization journey. The receipt also
+explicitly excludes the Core-authoritative Application lifecycle and release
+approval. A successful test must not be promoted to the full remote-target gate.
