@@ -138,3 +138,16 @@ Target Access v1 is implemented with:
 The Core/control-plane CA issuance and enrollment HTTP endpoint remain a
 BaseHarbor Core responsibility. Kubernetes/OpenShift continue to use their
 native authenticated API access path rather than this connector.
+
+## v0.4.23 integration qualification
+
+The connector-side foundation does not establish end-to-end Core lifecycle
+support. Core enrollment/session authority, shared canonical wire fixtures and
+real remote Docker/rootless Podman qualification are tracked in this repository's
+#3 and Core #807/#808. Exact private source revisions and diagnostic payloads stay
+in authorized private evidence. Cross-build success does not qualify a platform
+for runtime or terminal support.
+
+Enrollment destinations must use HTTPS with pinned server identity, without
+embedded credentials, query parameters or fragments. Bootstrap credentials are
+read exclusively from the protected token file.

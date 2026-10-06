@@ -27,6 +27,21 @@ func TestBootstrapConfigRequiresHTTPSAndPinnedIdentity(t *testing.T) {
 	}
 }
 
+func TestBootstrapDestinationRejectsCredentialAndAmbiguousURLs(t *testing.T) {
+	for _, destination := range []string{
+		"https://user:password@core.example/enroll",
+		"https://core.example/enroll?token=secret",
+		"https://core.example/enroll#other",
+		"https:core.example/enroll",
+	} {
+		cfg := BootstrapConfig{EnrollmentURL: destination, TrustBundleFile: "ca.pem",
+			TokenFile: "token", ExpectedServerIdentity: "spiffe://baseharbor/core/bootstrap"}
+		if err := cfg.Validate(); err == nil || strings.Contains(err.Error(), destination) {
+			t.Fatal("unsafe enrollment URL accepted or echoed")
+		}
+	}
+}
+
 func TestReadBootstrapTokenRequiresPrivatePermissions(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "token")
 	if err := os.WriteFile(path, []byte("secret"), 0o644); err != nil {

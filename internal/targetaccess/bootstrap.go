@@ -38,6 +38,9 @@ func (c BootstrapConfig) Validate() error {
 	if err != nil || u.Scheme != "https" || strings.TrimSpace(u.Host) == "" {
 		return errors.New("enrollment_url must be an absolute HTTPS URL")
 	}
+	if u.User != nil || u.RawQuery != "" || u.Fragment != "" || u.Opaque != "" {
+		return errors.New("enrollment_url must not contain credentials, query parameters or fragments")
+	}
 	for name, value := range map[string]string{
 		"trust_bundle_file":        c.TrustBundleFile,
 		"token_file":               c.TokenFile,
