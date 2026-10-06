@@ -54,3 +54,25 @@ func TestCapabilitySetRequiresExactContractVersionsAndNodeIdentity(t *testing.T)
 		t.Fatal("unsupported protocol version unexpectedly accepted")
 	}
 }
+
+func TestCapabilityRequestOptionalPayloadSurvivesConsumerValidation(t *testing.T) {
+	now := time.Now().UTC()
+	request := Request{ContractVersion: ContractVersion, ProtocolVersion: ProtocolVersion,
+		RequestID: "admission-capabilities", CorrelationID: "admission-capabilities",
+		TargetID: "target-a", Operation: OpCapabilities, IssuedAt: now,
+		DeadlineAt: now.Add(10 * time.Second)}
+	for _, payload := range []json.RawMessage{nil, json.RawMessage(`{}`)} {
+		request.Payload = payload
+		frame, err := testReadSession(t, request).ReadInboundFrame()
+		if err != nil || frame.Request == nil {
+			t.Fatalf("canonical capability request rejected: %v", err)
+		}
+		if err := frame.Request.Validate(now); err != nil {
+			t.Fatalf("decoded capability request changed validity: %v", err)
+		}
+	}
+	request.Payload = json.RawMessage(`null`)
+	if err := request.Validate(now); err == nil {
+		t.Fatal("explicit null payload accepted")
+	}
+}

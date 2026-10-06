@@ -125,7 +125,7 @@ type Request struct {
 	Operation       Operation       `json:"operation"`
 	IssuedAt        time.Time       `json:"issued_at"`
 	DeadlineAt      time.Time       `json:"deadline_at"`
-	Payload         json.RawMessage `json:"payload"`
+	Payload         json.RawMessage `json:"payload,omitempty"`
 }
 
 func (r Request) Validate(now time.Time) error {

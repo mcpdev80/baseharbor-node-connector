@@ -103,7 +103,7 @@ jobs:
         uses: actions/checkout@v7.0.1
         with:
           repository: mcpdev80/baseharbor
-          ref: e4e5bf1d4cc7e079d431263d29b7f573343ca20b
+          ref: ea5202d9d1c5b4294ad897ad7c530015c20c970c
           path: .core-transport-source
           persist-credentials: false
       - name: Build exact private Connector and pin actual runtime fixture
@@ -124,7 +124,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          test "$(git rev-parse HEAD)" = e4e5bf1d4cc7e079d431263d29b7f573343ca20b
+          test "$(git rev-parse HEAD)" = ea5202d9d1c5b4294ad897ad7c530015c20c970c
           go test -race ./internal/targetsession -run '^TestConnectorRuntimeTransport$' -count=1 -v | tee "$RUNNER_TEMP/transport.log"
       - name: Verify exact runtime fixture cleanup
         id: cleanup
@@ -140,7 +140,7 @@ jobs:
           python3 - <<'PY'
           import hashlib,json,os,pathlib,subprocess
           binary=pathlib.Path(os.environ.get('BASEHARBOR_TEST_CONNECTOR_BIN','/nonexistent'))
-          result={'schema':'baseharbor.private-transport-receipt/v1','repository':os.environ['GITHUB_REPOSITORY'],'commit':subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip(),'core_commit':'e4e5bf1d4cc7e079d431263d29b7f573343ca20b','connector_binary_sha256':hashlib.sha256(binary.read_bytes()).hexdigest() if binary.is_file() else None,'runtime':os.environ['BASEHARBOR_CONNECTOR_RUNTIME_KIND'],'runtime_image':os.environ.get('BASEHARBOR_CONNECTOR_RUNTIME_IMAGE'),'result':os.environ['TRANSPORT_RESULT'],'cleanup_result':os.environ['CLEANUP_RESULT'],'run_id':os.environ['GITHUB_RUN_ID'],'run_attempt':os.environ['GITHUB_RUN_ATTEMPT'],'test_authority':True,'scope':'encrypted inventory/container lifecycle/exec/PTY input-resize-exit/follow cancellation','release_eligible':False}
+          result={'schema':'baseharbor.private-transport-receipt/v1','repository':os.environ['GITHUB_REPOSITORY'],'commit':subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip(),'core_commit':'ea5202d9d1c5b4294ad897ad7c530015c20c970c','connector_binary_sha256':hashlib.sha256(binary.read_bytes()).hexdigest() if binary.is_file() else None,'runtime':os.environ['BASEHARBOR_CONNECTOR_RUNTIME_KIND'],'runtime_image':os.environ.get('BASEHARBOR_CONNECTOR_RUNTIME_IMAGE'),'result':os.environ['TRANSPORT_RESULT'],'cleanup_result':os.environ['CLEANUP_RESULT'],'run_id':os.environ['GITHUB_RUN_ID'],'run_attempt':os.environ['GITHUB_RUN_ATTEMPT'],'test_authority':True,'scope':'encrypted inventory/container lifecycle/exec/PTY input-resize-exit/follow cancellation','release_eligible':False}
           pathlib.Path('transport-receipt.json').write_text(json.dumps(result,indent=2)+'\n')
           PY
       - uses: actions/upload-artifact@v6
