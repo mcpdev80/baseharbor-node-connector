@@ -103,14 +103,21 @@ Source checks are separate from exact-ref production/runtime qualification.
 
 The opt-in `runtime-validation/enrollment/**` push runs the separately built
 Connector against the exact public Core harness at
-`cd4085ac65ced23eea7e4c706b23a3544f0a8e28`, with actual OpenBao 2.7.0, isolated
+`f551b139ec1373be3e84ffa1dbb1bf4f6673a7e6`, with actual OpenBao 2.7.0, isolated
 PostgreSQL storage/admission and either Docker or rootless Podman. It exchanges
 a persisted one-use Core grant over verified HTTPS, opens outbound mTLS, retains
 the local node key during explicit renewal, verifies live CA overlap and old-root
 retirement, and denies invocation/reconnection after persisted revocation.
 Native inventory and one bounded typed exec use an exact owned runtime fixture.
 
-The Core grant is created directly by the production authority in this fixture;
-this does not qualify an operator OIDC authorization journey. The receipt also
-explicitly excludes the Core-authoritative Application lifecycle and release
+The current harness obtains real access tokens from the reference Keycloak
+image, verifies OIDC discovery/JWKS over trusted HTTPS, resolves the operator's
+persisted tenant membership and creates initial/renewal grants through Core's
+protected HTTP handler. Missing, expired, wrong-audience and viewer tokens, and
+a foreign Target selection, must be denied before grant creation. Password
+grant is confined to disposable test accounts; the product login flow is unchanged.
+
+This expanded native qualification is pending. Earlier successful receipts used
+direct grant creation and remain explicitly outside the operator proof. The
+receipt still excludes the Core-authoritative Application lifecycle and release
 approval. A successful test must not be promoted to the full remote-target gate.
