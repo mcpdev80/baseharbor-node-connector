@@ -28,13 +28,13 @@ jobs:
         uses: actions/checkout@v7.0.1
         with:
           repository: mcpdev80/baseharbor
-          ref: f551b139ec1373be3e84ffa1dbb1bf4f6673a7e6
+          ref: 19959c85d73cf8d2104724cf2ec9d31558687eed
           path: .core-contract-source
           persist-credentials: false
       - name: Verify canonical consumer source lock
         run: |
           set -euo pipefail
-          test "$(git -C .core-contract-source rev-parse HEAD)" = f551b139ec1373be3e84ffa1dbb1bf4f6673a7e6
+          test "$(git -C .core-contract-source rev-parse HEAD)" = 19959c85d73cf8d2104724cf2ec9d31558687eed
           cmp internal/targetaccess/canonical/wire.schema.json .core-contract-source/contracts/targetaccess/v1/wire.schema.json
           cmp internal/targetaccess/canonical/wire.golden.json .core-contract-source/contracts/targetaccess/v1/wire.golden.json
           echo 'ee06d7cefd5a25037ebc104a32144b10578f052a820fec67d7200307c6bebc39  internal/targetaccess/canonical/wire.schema.json' | sha256sum -c -
@@ -56,7 +56,7 @@ jobs:
         run: |
           python3 - <<'PY'
           import json, os, subprocess
-          result={'schema':'baseharbor.private-source-receipt/v1','repository':os.environ['GITHUB_REPOSITORY'],'commit':subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip(),'core_commit':'f551b139ec1373be3e84ffa1dbb1bf4f6673a7e6','wire_schema_sha256':'ee06d7cefd5a25037ebc104a32144b10578f052a820fec67d7200307c6bebc39','source_result':'success','runtime_evidence':False,'release_eligible':False,'formatting_applied':bool(subprocess.check_output(['git','diff','--name-only','--','cmd','internal'],text=True).strip()),'run_id':os.environ['GITHUB_RUN_ID'],'run_attempt':os.environ['GITHUB_RUN_ATTEMPT']}
+          result={'schema':'baseharbor.private-source-receipt/v1','repository':os.environ['GITHUB_REPOSITORY'],'commit':subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip(),'core_commit':'19959c85d73cf8d2104724cf2ec9d31558687eed','wire_schema_sha256':'ee06d7cefd5a25037ebc104a32144b10578f052a820fec67d7200307c6bebc39','source_result':'success','runtime_evidence':False,'release_eligible':False,'formatting_applied':bool(subprocess.check_output(['git','diff','--name-only','--','cmd','internal'],text=True).strip()),'run_id':os.environ['GITHUB_RUN_ID'],'run_attempt':os.environ['GITHUB_RUN_ATTEMPT']}
           open('connector-source-receipt.json','w').write(json.dumps(result,indent=2)+'\n')
           PY
       - uses: actions/upload-artifact@v6
@@ -100,7 +100,7 @@ jobs:
         uses: actions/checkout@v7.0.1
         with:
           repository: mcpdev80/baseharbor
-          ref: f551b139ec1373be3e84ffa1dbb1bf4f6673a7e6
+          ref: 19959c85d73cf8d2104724cf2ec9d31558687eed
           path: .core-transport-source
           persist-credentials: false
       - name: Build exact private Connector and pin actual runtime fixture
@@ -121,7 +121,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          test "$(git rev-parse HEAD)" = f551b139ec1373be3e84ffa1dbb1bf4f6673a7e6
+          test "$(git rev-parse HEAD)" = 19959c85d73cf8d2104724cf2ec9d31558687eed
           go test -race ./internal/targetsession -run '^TestConnectorRuntimeTransport$' -count=1 -v | tee "$RUNNER_TEMP/transport.log"
       - name: Verify exact runtime fixture cleanup
         id: cleanup
@@ -137,7 +137,7 @@ jobs:
           python3 - <<'PY'
           import hashlib,json,os,pathlib,subprocess
           binary=pathlib.Path(os.environ.get('BASEHARBOR_TEST_CONNECTOR_BIN','/nonexistent'))
-          result={'schema':'baseharbor.private-transport-receipt/v1','repository':os.environ['GITHUB_REPOSITORY'],'commit':subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip(),'core_commit':'f551b139ec1373be3e84ffa1dbb1bf4f6673a7e6','connector_binary_sha256':hashlib.sha256(binary.read_bytes()).hexdigest() if binary.is_file() else None,'runtime':os.environ['BASEHARBOR_CONNECTOR_RUNTIME_KIND'],'runtime_image':os.environ.get('BASEHARBOR_CONNECTOR_RUNTIME_IMAGE'),'result':os.environ['TRANSPORT_RESULT'],'cleanup_result':os.environ['CLEANUP_RESULT'],'run_id':os.environ['GITHUB_RUN_ID'],'run_attempt':os.environ['GITHUB_RUN_ATTEMPT'],'test_authority':True,'scope':'encrypted immutable bundle/Compose or Quadlet apply-status-repair-destroy/foreign preservation/inventory/container lifecycle/exec/PTY/follow cancellation','release_eligible':False}
+          result={'schema':'baseharbor.private-transport-receipt/v1','repository':os.environ['GITHUB_REPOSITORY'],'commit':subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip(),'core_commit':'19959c85d73cf8d2104724cf2ec9d31558687eed','connector_binary_sha256':hashlib.sha256(binary.read_bytes()).hexdigest() if binary.is_file() else None,'runtime':os.environ['BASEHARBOR_CONNECTOR_RUNTIME_KIND'],'runtime_image':os.environ.get('BASEHARBOR_CONNECTOR_RUNTIME_IMAGE'),'result':os.environ['TRANSPORT_RESULT'],'cleanup_result':os.environ['CLEANUP_RESULT'],'run_id':os.environ['GITHUB_RUN_ID'],'run_attempt':os.environ['GITHUB_RUN_ATTEMPT'],'test_authority':True,'scope':'encrypted immutable bundle/Compose or Quadlet apply-status-repair-destroy/foreign preservation/inventory/container lifecycle/exec/PTY/follow cancellation','release_eligible':False}
           pathlib.Path('transport-receipt.json').write_text(json.dumps(result,indent=2)+'\n')
           PY
       - uses: actions/upload-artifact@v6
@@ -186,7 +186,7 @@ jobs:
         uses: actions/checkout@v7.0.1
         with:
           repository: mcpdev80/baseharbor
-          ref: f551b139ec1373be3e84ffa1dbb1bf4f6673a7e6
+          ref: 19959c85d73cf8d2104724cf2ec9d31558687eed
           path: .core-enrollment-source
           persist-credentials: false
       - name: Build exact private Connector and pin actual runtime fixture
@@ -232,7 +232,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          test "$(git rev-parse HEAD)" = f551b139ec1373be3e84ffa1dbb1bf4f6673a7e6
+          test "$(git rev-parse HEAD)" = 19959c85d73cf8d2104724cf2ec9d31558687eed
           go test -race ./internal/openbao -run '^TestNativeOpenBaoManagedCoreAndNodeCSRRotation$' -count=1 -v | tee "$RUNNER_TEMP/enrollment.log"
           python3 - <<'PY'
           import os,pathlib
@@ -253,7 +253,7 @@ jobs:
           python3 - <<'PY'
           import hashlib,json,os,pathlib,subprocess
           binary=pathlib.Path(os.environ.get('BASEHARBOR_TEST_CONNECTOR_BIN','/nonexistent'))
-          result={'schema':'baseharbor.private-managed-enrollment-receipt/v1','repository':os.environ['GITHUB_REPOSITORY'],'commit':subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip(),'core_commit':'f551b139ec1373be3e84ffa1dbb1bf4f6673a7e6','connector_binary_sha256':hashlib.sha256(binary.read_bytes()).hexdigest() if binary.is_file() else None,'runtime':os.environ['BASEHARBOR_CONNECTOR_RUNTIME_KIND'],'runtime_image':os.environ.get('BASEHARBOR_CONNECTOR_RUNTIME_IMAGE'),'result':os.environ['ENROLLMENT_RESULT'],'cleanup_result':os.environ['CLEANUP_RESULT'],'run_id':os.environ['GITHUB_RUN_ID'],'run_attempt':os.environ['GITHUB_RUN_ATTEMPT'],'test_authority':False,'production_issuer':True,'persisted_admission':True,'operator_oidc_authorization_evidence':os.environ['ENROLLMENT_RESULT']=='success' and os.environ['CLEANUP_RESULT']=='success','identity_image':os.environ.get('BASEHARBOR_CONNECTOR_IDENTITY_IMAGE'),'application_lifecycle_evidence':False,'scope':'actual Keycloak operator OIDC/protected initial and renewal grants/denials/OpenBao/PostgreSQL CSR exchange/outbound mTLS/local-key renewal/CA overlap and retirement/persisted revocation/native inventory and bounded exec','release_eligible':False}
+          result={'schema':'baseharbor.private-managed-enrollment-receipt/v1','repository':os.environ['GITHUB_REPOSITORY'],'commit':subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip(),'core_commit':'19959c85d73cf8d2104724cf2ec9d31558687eed','connector_binary_sha256':hashlib.sha256(binary.read_bytes()).hexdigest() if binary.is_file() else None,'runtime':os.environ['BASEHARBOR_CONNECTOR_RUNTIME_KIND'],'runtime_image':os.environ.get('BASEHARBOR_CONNECTOR_RUNTIME_IMAGE'),'result':os.environ['ENROLLMENT_RESULT'],'cleanup_result':os.environ['CLEANUP_RESULT'],'run_id':os.environ['GITHUB_RUN_ID'],'run_attempt':os.environ['GITHUB_RUN_ATTEMPT'],'test_authority':False,'production_issuer':True,'persisted_admission':True,'operator_oidc_authorization_evidence':os.environ['ENROLLMENT_RESULT']=='success' and os.environ['CLEANUP_RESULT']=='success','identity_image':os.environ.get('BASEHARBOR_CONNECTOR_IDENTITY_IMAGE'),'application_lifecycle_evidence':False,'scope':'actual Keycloak operator OIDC/protected initial and renewal grants/denials/OpenBao/PostgreSQL CSR exchange/outbound mTLS/local-key renewal/CA overlap and retirement/persisted revocation/native inventory and bounded exec','release_eligible':False}
           pathlib.Path('enrollment-receipt.json').write_text(json.dumps(result,indent=2)+'\n')
           PY
       - uses: actions/upload-artifact@v6
