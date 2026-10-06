@@ -67,11 +67,27 @@ The connector must not decide:
 
 Compose deployment uses an explicit connector staging root.
 
-All project directories, Compose files and optional env files are resolved through the staging-root guard. Existing symlinks are evaluated and an artifact that resolves outside the staging root is rejected.
+Every bundle member is validated before a new private object is written through
+Go's confined filesystem root. Publication uses an atomic no-replace hard link
+to the complete manifest. Existing bundle IDs, files and symlinks survive failed
+or concurrent publication. Cancellation removes only the new uncommitted object;
+an interrupted process may leave an orphan, which cannot be deployed.
 
-This lets a future #769 transport transfer a bounded deployment bundle without granting arbitrary host filesystem access.
+Compose accepts only a committed bundle directory and members from that same
+bundle. It rechecks every digest before invoking the engine. Returned paths are
+opaque artifact references; Core uses them rather than guessing a directory.
 
-The wire transfer/enrollment protocol remains intentionally undefined until BaseHarbor #769 finalizes the Target Access Provider contract.
+Quadlet realization receipts retain immutable content outside the generator's
+search paths. Existing unit/drop-in artifacts without a verified matching inode
+and digest are foreign and cannot be overwritten, stopped or removed. Generated
+units use native `[Install]` drop-ins and `systemctl --user start/stop/restart`,
+not `systemctl enable` on generated services. The live capability requires a
+reachable Linux systemd user manager. These receipts describe realization only;
+Core retains desired state, policy and authorization authority.
+
+The canonical public wire package defines transfer, enrollment and native
+Quadlet names. Source checks and primitive runtime probes do not qualify the
+full production enrollment/ownership/application/browser release requirements.
 
 ## No generic runtime-command API
 

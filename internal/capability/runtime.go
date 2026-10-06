@@ -12,12 +12,12 @@ func ForRuntime(runtime string) []Descriptor {
 			}
 		}
 	}
-	if runtime != "podman" {
+	if runtime != "podman" || goruntime.GOOS != "linux" {
 		for i := range result {
 			switch result[i].Name {
 			case QuadletApply, QuadletRemove, QuadletEnable, QuadletDisable:
 				result[i].Available = false
-				result[i].Detail = "Podman targets only"
+				result[i].Detail = "Linux Podman with a live systemd user manager is required"
 			}
 		}
 	}

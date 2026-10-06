@@ -183,5 +183,23 @@
         ]
       }
     }
+  },
+  {
+    "record": "request",
+    "wire": {
+      "contract_version": "baseharbor.target-access/v1",
+      "protocol_version": "1",
+      "request_id": "quadlet-fixture-a",
+      "correlation_id": "execution-fixture-a",
+      "target_id": "lab",
+      "operation": "runtime.quadlet.apply",
+      "issued_at": "2026-10-06T02:00:00Z",
+      "deadline_at": "2026-10-06T02:05:00Z",
+      "payload": {
+        "name": "workload.container",
+        "content": "[Container]\nImage=example/workload:fixture\n[Install]\nWantedBy=default.target\n",
+        "enable": true
+      }
+    }
   }
 ]

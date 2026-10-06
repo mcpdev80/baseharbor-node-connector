@@ -1,6 +1,7 @@
 package targetaccess
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"os"
@@ -17,7 +18,7 @@ func TestStageBundleWritesVerifiedFilesInsideStagingRoot(t *testing.T) {
 	}
 	data := []byte("services:\n  app:\n    image: example/app:v1\n")
 	sum := sha256.Sum256(data)
-	result, err := StageBundle(root, Bundle{
+	result, err := StageBundle(context.Background(), root, Bundle{
 		BundleID: "deploy-1",
 		Files: []BundleFile{{
 			Path:   "compose.yaml",
@@ -47,18 +48,38 @@ func TestStageBundleRejectsTraversalAndHashMismatch(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = StageBundle(root, Bundle{
+	_, err = StageBundle(context.Background(), root, Bundle{
 		BundleID: "deploy-1",
 		Files:    []BundleFile{{Path: "../escape", SHA256: "deadbeef", Data: []byte("x")}},
 	})
 	if err == nil {
 		t.Fatal("bundle traversal unexpectedly accepted")
 	}
-	_, err = StageBundle(root, Bundle{
+	_, err = StageBundle(context.Background(), root, Bundle{
 		BundleID: "deploy-1",
 		Files:    []BundleFile{{Path: "safe.txt", SHA256: "deadbeef", Data: []byte("x")}},
 	})
 	if err == nil {
 		t.Fatal("hash mismatch unexpectedly accepted")
+	}
+}
+
+func TestLaterHashMismatchPublishesNoEarlierValidFile(t *testing.T) {
+	root, err := fssecure.OpenRoot(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	data := []byte("first valid file")
+	sum := sha256.Sum256(data)
+	_, err = StageBundle(context.Background(), root, Bundle{BundleID: "atomic", Files: []BundleFile{
+		{Path: "first.yml", SHA256: hex.EncodeToString(sum[:]), Data: data},
+		{Path: "second.yml", SHA256: "invalid", Data: []byte("second")},
+	}})
+	if err == nil {
+		t.Fatal("later hash mismatch accepted")
+	}
+	entries, err := os.ReadDir(root.Path())
+	if err != nil || len(entries) != 0 {
+		t.Fatal("invalid bundle published an earlier valid member")
 	}
 }

@@ -426,7 +426,7 @@
       "properties": {
         "name": {
           "type": "string",
-          "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$"
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,63}\\.(container|network|volume|pod|image|build)$"
         },
         "content": {
           "type": "string",
@@ -447,7 +447,7 @@
       "properties": {
         "name": {
           "type": "string",
-          "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$"
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,63}\\.(container|network|volume|pod|image|build)$"
         }
       }
     },

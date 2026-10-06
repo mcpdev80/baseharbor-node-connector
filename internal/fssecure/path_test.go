@@ -1,6 +1,7 @@
 package fssecure
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -69,7 +70,7 @@ func TestExistingRejectsSymlinkEscape(t *testing.T) {
 	}
 }
 
-func TestWriteFileRejectsSymlinkParentEscape(t *testing.T) {
+func TestPublishBundleRejectsSymlinkStorageEscape(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("symlink semantics differ on Windows")
 	}
@@ -82,14 +83,14 @@ func TestWriteFileRejectsSymlinkParentEscape(t *testing.T) {
 	if err := os.MkdirAll(outside, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.Symlink(outside, filepath.Join(rootDir, "escape")); err != nil {
+	if err := os.Symlink(outside, filepath.Join(rootDir, "bundles")); err != nil {
 		t.Fatal(err)
 	}
 	root, err := OpenRoot(rootDir)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := root.WriteFile(filepath.Join("escape", "payload.txt"), []byte("x"), 0o600); err == nil {
+	if _, err := root.PublishBundle(context.Background(), "payload", []BundleFile{{Path: "safe.txt", Data: []byte("x")}}); err == nil {
 		t.Fatal("expected staged write through symlink parent to be rejected")
 	}
 }
