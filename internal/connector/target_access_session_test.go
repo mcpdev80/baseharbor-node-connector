@@ -12,7 +12,7 @@ import (
 )
 
 func TestTargetAccessCapabilitiesOperationReturnsNegotiatedProjection(t *testing.T) {
-	service := &Service{
+	service := &Service{TransportStateRoot: t.TempDir(),
 		Runtime:      bhruntime.Detection{Kind: bhruntime.Docker},
 		Capabilities: capability.ForRuntime("docker"),
 	}

@@ -14,6 +14,7 @@ import (
 
 type Config struct {
 	StagingRoot string
+	TransportStateRoot string
 	QuadletRoot string
 }
 
@@ -26,6 +27,7 @@ type Service struct {
 	Compose      *compose.Adapter
 	Quadlet      *quadlet.Manager
 	Staging      *fssecure.Root
+	TransportStateRoot string
 }
 
 func Open(ctx context.Context, cfg Config) (*Service, error) {
@@ -55,5 +57,6 @@ func Open(ctx context.Context, cfg Config) (*Service, error) {
 		Compose:      compose.NewAdapter(detection.Kind, staging),
 		Quadlet:      quadletManager,
 		Staging:      staging,
+		TransportStateRoot: cfg.TransportStateRoot,
 	}, nil
 }

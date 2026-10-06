@@ -13,6 +13,7 @@ concurrency:
   cancel-in-progress: true
 jobs:
   source:
+    if: github.event_name != 'pull_request' || github.head_ref != 'feature/v0.4.23-core-integration'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:

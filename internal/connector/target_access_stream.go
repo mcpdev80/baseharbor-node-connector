@@ -194,13 +194,14 @@ func (a *TargetAccess) ServeTerminalStream(ctx context.Context, session *targeta
 	if open.TargetID != a.identity.TargetID {
 		return errors.New("stream target does not match connector target identity")
 	}
-	if !a.capabilityAvailable(capability.Terminal) {
+	if a.admissions==nil || !a.capabilityAvailable(capability.Terminal) {
 		return errors.New("terminal streaming capability is unavailable")
 	}
 	if open.ResumeAfter != 0 {
 		return errors.New("terminal stream replay is not implemented; resume_after must be zero")
 	}
 
+	if err:=a.admissions.AdmitTerminal(ctx,open);err!=nil {return err}
 	terminal, err := a.service.Observation.StartTerminal(ctx, open.ResourceID, container.TerminalRequest{
 		Argv:        append([]string(nil), open.Terminal.Argv...),
 		Workdir:     open.Terminal.Workdir,

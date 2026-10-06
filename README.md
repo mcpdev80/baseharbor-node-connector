@@ -179,3 +179,21 @@ or correlation mismatch. This source change does not prove production Core
 enrollment routing, durable destructive admission, active revocation/rotation
 or remote Docker/rootless Podman cleanup. Those integration requirements remain
 open before a live remote capability or release approval can be claimed.
+
+## Durable side-effect admission
+
+On Linux the daemon binds a private `transport/` journal to its immutable
+tenant/Target/node/runtime identity. Runtime mutations, exec, artifact staging
+and terminal opens persist transport admission before invocation. File locking,
+exclusive creation, file synchronization and directory synchronization prevent
+a second admitted invocation across workers and restarts. The journal stores
+scope/request/content digests and admission time; it stores no payloads,
+credentials, desired state or results.
+
+A repeated identifier returns `replay_ambiguous`; changed content returns
+`replay_conflict`. Neither executes again. Core must reconcile observed state
+and obtain a new authorized request when appropriate. Interrupted or corrupt
+records fail closed. The bounded journal never automatically forgets admission.
+An unavailable journal suppresses side-effect capabilities. This implementation
+uses a protected local Linux filesystem; it does not qualify remote execution,
+rotation or active-session revocation by itself.

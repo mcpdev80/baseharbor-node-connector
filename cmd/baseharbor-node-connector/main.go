@@ -63,6 +63,7 @@ func run(ctx context.Context, args []string, stderr io.Writer) error {
 
 	service, err := connector.Open(ctx, connector.Config{
 		StagingRoot: cfg.StagingRoot,
+		TransportStateRoot: filepath.Join(cfg.StateRoot,"transport"),
 		QuadletRoot: cfg.QuadletRoot,
 	})
 	if err != nil {
@@ -112,6 +113,7 @@ func run(ctx context.Context, args []string, stderr io.Writer) error {
 	if err != nil {
 		return err
 	}
+	defer access.Close()
 	return access.RunOutboundPool(ctx, connector.OutboundPoolConfig{
 		OutboundConfig: connector.OutboundConfig{
 			Address: cfg.CoreAddress,
@@ -190,7 +192,8 @@ func parseConfig(args []string, stderr io.Writer) (appConfig, error) {
 	if cfg.NodeIdentity != "spiffe://baseharbor/platform/connectors/"+cfg.TenantID+"/"+cfg.TargetID+"/"+cfg.NodeID {
 		return appConfig{}, errors.New("node identity must match the Core tenant/Target/node binding")
 	}
-	cfg.StateRoot = filepath.Clean(cfg.StateRoot)
+	cfg.StateRoot, err = filepath.Abs(cfg.StateRoot)
+	if err != nil { return appConfig{}, errors.New("invalid connector state root") }
 	if cfg.StagingRoot == "" {
 		cfg.StagingRoot = filepath.Join(cfg.StateRoot, "staging")
 	}
