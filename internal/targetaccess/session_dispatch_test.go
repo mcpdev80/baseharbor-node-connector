@@ -82,3 +82,21 @@ func testReadSession(t *testing.T, value any) *Session {
 		},
 	}
 }
+
+func TestReadInboundFrameClassifiesCanonicalCancellation(t *testing.T) {
+	cancellation := Cancel{ContractVersion: ContractVersion, ProtocolVersion: ProtocolVersion, RequestID: "req-1", CorrelationID: "corr-a", Cancel: true}
+	frame, err := testReadSession(t, cancellation).ReadInboundFrame()
+	if err != nil || frame.Cancel == nil || frame.Cancel.RequestID != cancellation.RequestID || frame.Request != nil || frame.StreamOpen != nil {
+		t.Fatal("canonical cancellation was not classified exclusively", frame, err)
+	}
+	for _, data := range []map[string]any{
+		{"contract_version": ContractVersion, "protocol_version": ProtocolVersion, "request_id": "req-1", "correlation_id": "corr-a", "cancel": false},
+		{"contract_version": ContractVersion, "protocol_version": ProtocolVersion, "request_id": "req-1", "cancel": true},
+		{"operation": string(OpCapabilities), "cancel": true},
+		{"kind": string(StreamLogs), "cancel": true},
+	} {
+		if _, err := testReadSession(t, data).ReadInboundFrame(); err == nil {
+			t.Fatal("ambiguous or unbound cancellation was accepted")
+		}
+	}
+}

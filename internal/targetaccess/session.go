@@ -158,6 +158,7 @@ func (s *Session) ReadRequest(request *Request) error {
 }
 
 type InboundFrame struct {
+	Cancel     *Cancel
 	Request    *Request
 	StreamOpen *StreamOpen
 }
@@ -173,8 +174,25 @@ func (s *Session) ReadInboundFrame() (InboundFrame, error) {
 	}
 	_, hasOperation := shape["operation"]
 	_, hasStreamKind := shape["kind"]
-	if hasOperation == hasStreamKind {
+	_, hasCancel := shape["cancel"]
+	shapes := 0
+	for _, present := range []bool{hasOperation, hasStreamKind, hasCancel} {
+		if present {
+			shapes++
+		}
+	}
+	if shapes != 1 {
 		return InboundFrame{}, errors.New("target-access inbound frame is ambiguous or unsupported")
+	}
+	if hasCancel {
+		var cancellation Cancel
+		if err := decodeStrictFrame(data, &cancellation); err != nil {
+			return InboundFrame{}, err
+		}
+		if cancellation.ContractVersion != s.Negotiated.ContractVersion || cancellation.ProtocolVersion != s.Negotiated.ProtocolVersion {
+			return InboundFrame{}, errors.New("cancellation version does not match the negotiated session")
+		}
+		return InboundFrame{Cancel: &cancellation}, nil
 	}
 	if hasOperation {
 		var request Request
@@ -194,6 +212,13 @@ func (s *Session) ReadInboundFrame() (InboundFrame, error) {
 		return InboundFrame{}, err
 	}
 	return InboundFrame{StreamOpen: &open}, nil
+}
+
+func (s *Session) WriteCancel(cancellation Cancel) error {
+	if cancellation.ContractVersion != s.Negotiated.ContractVersion || cancellation.ProtocolVersion != s.Negotiated.ProtocolVersion {
+		return ErrTargetAccessWire
+	}
+	return s.writeJSON(cancellation)
 }
 
 func (s *Session) WriteResponse(response Response) error {
