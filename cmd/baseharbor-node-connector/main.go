@@ -45,6 +45,7 @@ type appConfig struct {
 	BootstrapCA            string
 	BootstrapAuthorization string
 	RetainToken            bool
+	RenewCertificate       bool
 	Sessions               int
 }
 
@@ -92,7 +93,7 @@ func run(ctx context.Context, args []string, stderr io.Writer) error {
 		ExpectedPeerIdentity: cfg.CoreIdentity,
 		ServerName:           cfg.ServerName,
 	}
-	if needsEnrollment(tlsFiles) {
+	if cfg.RenewCertificate || needsEnrollment(tlsFiles) {
 		if strings.TrimSpace(cfg.BootstrapURL) == "" {
 			return errors.New("connector identity material is incomplete and no --bootstrap-url was configured")
 		}
@@ -158,6 +159,7 @@ func parseConfig(args []string, stderr io.Writer) (appConfig, error) {
 	fs.StringVar(&cfg.BootstrapCA, "bootstrap-ca", env("BASEHARBOR_CONNECTOR_BOOTSTRAP_CA", ""), "bootstrap CA bundle path")
 	fs.StringVar(&cfg.BootstrapAuthorization, "bootstrap-authorization-file", env("BASEHARBOR_CONNECTOR_BOOTSTRAP_AUTHORIZATION_FILE", ""), "private Core-issued token/nonce/expiry JSON authorization")
 	fs.BoolVar(&cfg.RetainToken, "retain-bootstrap-authorization", false, "retain consumed bootstrap authorization after successful enrollment")
+	fs.BoolVar(&cfg.RenewCertificate, "renew-certificate", false, "exchange an explicit one-use Core renewal authorization for this existing node")
 	fs.IntVar(&cfg.Sessions, "sessions", 0, "outbound session count (default 4, max 32)")
 	if err := fs.Parse(args); err != nil {
 		return appConfig{}, err
@@ -167,6 +169,9 @@ func parseConfig(args []string, stderr io.Writer) (appConfig, error) {
 	}
 	if cfg.Runtime != "" && cfg.Runtime != "docker" && cfg.Runtime != "podman" {
 		return appConfig{}, errors.New("--runtime must be docker or podman")
+	}
+	if cfg.RenewCertificate && strings.TrimSpace(cfg.BootstrapURL) == "" {
+		return appConfig{}, errors.New("--renew-certificate requires an explicit --bootstrap-url and fresh Core renewal authorization")
 	}
 
 	cfg.TenantID = strings.TrimSpace(cfg.TenantID)

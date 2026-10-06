@@ -188,6 +188,16 @@ interrupted operations and terminal input are never automatically replayed.
 TLS session tests verify peer retirement, but production OpenBao rotation,
 persisted Core admission and actual runtime lifecycle evidence remain required.
 
+For certificate renewal, obtain a fresh owner-only authorization file from
+Core's protected `POST /api/v1/connectors/renewal-authorizations` endpoint and
+restart this same node with `--renew-certificate` plus its existing bootstrap
+URL/CA and authorization-file settings. Renewal retains the existing locally
+held private key and stable tenant/Target/node/runtime identity, validates the
+replacement before installing it, and consumes the authorization once. It does
+not replay runtime requests or terminal input from old sessions. Coordinate
+Core server-certificate and CA overlap changes before switching node trust;
+this explicit renewal option is not an automatic rotation controller.
+
 ## Durable side-effect admission
 
 On Linux the daemon binds a private `transport/` journal to its immutable

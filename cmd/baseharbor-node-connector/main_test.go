@@ -77,6 +77,20 @@ func TestNeedsEnrollmentRequiresAllIdentityMaterial(t *testing.T) {
 	}
 }
 
+func TestCertificateRenewalRequiresExplicitAuthorizationExchange(t *testing.T) {
+	t.Setenv("XDG_DATA_HOME", t.TempDir())
+	t.Setenv("BASEHARBOR_CONNECTOR_BOOTSTRAP_URL", "")
+	base := []string{"--tenant-id", "11111111-1111-4111-8111-111111111111", "--core", "core.example:9443",
+		"--target-id", "edge-a", "--node-id", "node-a", "--renew-certificate"}
+	if _, err := parseConfig(base, &bytes.Buffer{}); err == nil {
+		t.Fatal("renewal silently reused the established session instead of a fresh authorization")
+	}
+	cfg, err := parseConfig(append(base, "--bootstrap-url", "https://core.example/api/v1/connectors/enroll"), &bytes.Buffer{})
+	if err != nil || !cfg.RenewCertificate || cfg.NodeID != "node-a" || cfg.TargetID != "edge-a" {
+		t.Fatal("renewal changed stable enrollment identity", err)
+	}
+}
+
 func testTLSFiles(files []string) targetaccess.TLSFiles {
 	return targetaccess.TLSFiles{
 		CertificateFile: files[0],
