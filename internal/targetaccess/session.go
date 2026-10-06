@@ -28,6 +28,7 @@ type Session struct {
 	cancel     context.CancelFunc
 	closeOnce  sync.Once
 	expiresAt  time.Time
+	checkTrust func() error
 }
 
 func OpenSession(
@@ -73,9 +74,10 @@ func OpenSession(
 		maxFrameBytes = DefaultMaxFrameBytes
 	}
 	session := &Session{
-		conn:     secured,
-		reader:   bufio.NewReader(secured),
-		maxFrame: maxFrameBytes,
+		conn:       secured,
+		reader:     bufio.NewReader(secured),
+		maxFrame:   maxFrameBytes,
+		checkTrust: func() error { return files.verifyConnection(role, secured.ConnectionState()) },
 	}
 	remote, err := session.exchangeHello(role, local)
 	if err != nil {
@@ -110,7 +112,7 @@ func OpenSession(
 		_ = session.Close()
 		return nil, err
 	}
-	go func() { <-session.lifetime.Done(); _ = session.Close() }()
+	go session.watchPeerTrust()
 	return session, nil
 }
 
@@ -312,6 +314,9 @@ func (s *Session) writeJSON(value any) error {
 	}
 	s.writerMu.Lock()
 	defer s.writerMu.Unlock()
+	if err := s.revalidatePeer(); err != nil {
+		return err
+	}
 	deadline := time.Now().Add(5 * time.Second)
 	if !s.expiresAt.IsZero() && s.expiresAt.Before(deadline) {
 		deadline = s.expiresAt
@@ -336,6 +341,9 @@ func (s *Session) readJSON(target any) error {
 }
 
 func (s *Session) readFrame() ([]byte, error) {
+	if err := s.revalidatePeer(); err != nil {
+		return nil, err
+	}
 	var header [4]byte
 	if _, err := io.ReadFull(s.reader, header[:]); err != nil {
 		return nil, err
@@ -346,6 +354,9 @@ func (s *Session) readFrame() ([]byte, error) {
 	}
 	data := make([]byte, size)
 	if _, err := io.ReadFull(s.reader, data); err != nil {
+		return nil, err
+	}
+	if err := s.revalidatePeer(); err != nil {
 		return nil, err
 	}
 	return data, nil

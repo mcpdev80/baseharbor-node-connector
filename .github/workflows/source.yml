@@ -27,13 +27,13 @@ jobs:
         uses: actions/checkout@v7.0.1
         with:
           repository: mcpdev80/baseharbor
-          ref: 8b53883e06c0e0fa0f95a3e27c89992104e42471
+          ref: 0839c7d791829e2f06f400a50e92d980df492e2a
           path: .core-contract-source
           persist-credentials: false
       - name: Verify canonical consumer source lock
         run: |
           set -euo pipefail
-          test "$(git -C .core-contract-source rev-parse HEAD)" = 8b53883e06c0e0fa0f95a3e27c89992104e42471
+          test "$(git -C .core-contract-source rev-parse HEAD)" = 0839c7d791829e2f06f400a50e92d980df492e2a
           cmp internal/targetaccess/canonical/wire.schema.json .core-contract-source/contracts/targetaccess/v1/wire.schema.json
           cmp internal/targetaccess/canonical/wire.golden.json .core-contract-source/contracts/targetaccess/v1/wire.golden.json
           echo 'ee06d7cefd5a25037ebc104a32144b10578f052a820fec67d7200307c6bebc39  internal/targetaccess/canonical/wire.schema.json' | sha256sum -c -
@@ -55,7 +55,7 @@ jobs:
         run: |
           python3 - <<'PY'
           import json, os, subprocess
-          result={'schema':'baseharbor.private-source-receipt/v1','repository':os.environ['GITHUB_REPOSITORY'],'commit':subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip(),'core_commit':'8b53883e06c0e0fa0f95a3e27c89992104e42471','wire_schema_sha256':'ee06d7cefd5a25037ebc104a32144b10578f052a820fec67d7200307c6bebc39','source_result':'success','runtime_evidence':False,'release_eligible':False,'formatting_applied':bool(subprocess.check_output(['git','diff','--name-only','--','cmd','internal'],text=True).strip()),'run_id':os.environ['GITHUB_RUN_ID'],'run_attempt':os.environ['GITHUB_RUN_ATTEMPT']}
+          result={'schema':'baseharbor.private-source-receipt/v1','repository':os.environ['GITHUB_REPOSITORY'],'commit':subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip(),'core_commit':'0839c7d791829e2f06f400a50e92d980df492e2a','wire_schema_sha256':'ee06d7cefd5a25037ebc104a32144b10578f052a820fec67d7200307c6bebc39','source_result':'success','runtime_evidence':False,'release_eligible':False,'formatting_applied':bool(subprocess.check_output(['git','diff','--name-only','--','cmd','internal'],text=True).strip()),'run_id':os.environ['GITHUB_RUN_ID'],'run_attempt':os.environ['GITHUB_RUN_ATTEMPT']}
           open('connector-source-receipt.json','w').write(json.dumps(result,indent=2)+'\n')
           PY
       - uses: actions/upload-artifact@v6
@@ -99,7 +99,7 @@ jobs:
         uses: actions/checkout@v7.0.1
         with:
           repository: mcpdev80/baseharbor
-          ref: 8b53883e06c0e0fa0f95a3e27c89992104e42471
+          ref: 0839c7d791829e2f06f400a50e92d980df492e2a
           path: .core-transport-source
           persist-credentials: false
       - name: Build exact private Connector and pin actual runtime fixture
@@ -120,7 +120,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          test "$(git rev-parse HEAD)" = 8b53883e06c0e0fa0f95a3e27c89992104e42471
+          test "$(git rev-parse HEAD)" = 0839c7d791829e2f06f400a50e92d980df492e2a
           go test -race ./internal/targetsession -run '^TestConnectorRuntimeTransport$' -count=1 -v | tee "$RUNNER_TEMP/transport.log"
       - name: Verify exact runtime fixture cleanup
         id: cleanup
@@ -136,7 +136,7 @@ jobs:
           python3 - <<'PY'
           import hashlib,json,os,pathlib,subprocess
           binary=pathlib.Path(os.environ.get('BASEHARBOR_TEST_CONNECTOR_BIN','/nonexistent'))
-          result={'schema':'baseharbor.private-transport-receipt/v1','repository':os.environ['GITHUB_REPOSITORY'],'commit':subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip(),'core_commit':'8b53883e06c0e0fa0f95a3e27c89992104e42471','connector_binary_sha256':hashlib.sha256(binary.read_bytes()).hexdigest() if binary.is_file() else None,'runtime':os.environ['BASEHARBOR_CONNECTOR_RUNTIME_KIND'],'runtime_image':os.environ.get('BASEHARBOR_CONNECTOR_RUNTIME_IMAGE'),'result':os.environ['TRANSPORT_RESULT'],'cleanup_result':os.environ['CLEANUP_RESULT'],'run_id':os.environ['GITHUB_RUN_ID'],'run_attempt':os.environ['GITHUB_RUN_ATTEMPT'],'test_authority':True,'scope':'encrypted immutable bundle/Compose or Quadlet apply-status-repair-destroy/foreign preservation/inventory/container lifecycle/exec/PTY/follow cancellation','release_eligible':False}
+          result={'schema':'baseharbor.private-transport-receipt/v1','repository':os.environ['GITHUB_REPOSITORY'],'commit':subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip(),'core_commit':'0839c7d791829e2f06f400a50e92d980df492e2a','connector_binary_sha256':hashlib.sha256(binary.read_bytes()).hexdigest() if binary.is_file() else None,'runtime':os.environ['BASEHARBOR_CONNECTOR_RUNTIME_KIND'],'runtime_image':os.environ.get('BASEHARBOR_CONNECTOR_RUNTIME_IMAGE'),'result':os.environ['TRANSPORT_RESULT'],'cleanup_result':os.environ['CLEANUP_RESULT'],'run_id':os.environ['GITHUB_RUN_ID'],'run_attempt':os.environ['GITHUB_RUN_ATTEMPT'],'test_authority':True,'scope':'encrypted immutable bundle/Compose or Quadlet apply-status-repair-destroy/foreign preservation/inventory/container lifecycle/exec/PTY/follow cancellation','release_eligible':False}
           pathlib.Path('transport-receipt.json').write_text(json.dumps(result,indent=2)+'\n')
           PY
       - uses: actions/upload-artifact@v6

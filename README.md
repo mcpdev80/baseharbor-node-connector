@@ -131,7 +131,7 @@ Target Access v1 is implemented with:
 - typed bounded runtime operations;
 - authenticated capability/version negotiation;
 - TLS 1.3 mTLS with explicit peer identity;
-- CSR enrollment and certificate installation; revoked serial checks at new handshakes;
+- CSR enrollment and certificate installation; current trust and revoked serial checks at handshakes, before writes and after inbound frames;
 - traversal-safe artifact staging with SHA-256 verification;
 - bounded log streaming with retained cursors; PTY streams reject replay and reattachment;
 - outbound-only concurrent session pooling;
@@ -179,6 +179,14 @@ or correlation mismatch. This source change does not prove production Core
 enrollment routing, durable destructive admission, active revocation/rotation
 or remote Docker/rootless Podman cleanup. Those integration requirements remain
 open before a live remote capability or release approval can be claimed.
+
+Open sessions revalidate the configured peer trust and revocation files every
+five seconds, including during idle periods and active streams. Missing or
+invalid trust, a removed authority or a revoked peer closes the session and
+cancels its operation context. New connections reload current identity material;
+interrupted operations and terminal input are never automatically replayed.
+TLS session tests verify peer retirement, but production OpenBao rotation,
+persisted Core admission and actual runtime lifecycle evidence remain required.
 
 ## Durable side-effect admission
 
