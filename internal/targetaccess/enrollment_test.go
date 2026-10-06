@@ -33,3 +33,21 @@ func TestEnrollmentRequestAcceptsSignedCSRAndCarriesNoPrivateKey(t *testing.T) {
 		t.Fatal("csr missing")
 	}
 }
+
+func TestEnrollmentCSRRejectsAmbiguousPEM(t *testing.T) {
+	_, key, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, err := x509.CreateCertificateRequest(rand.Reader, &x509.CertificateRequest{}, key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	csr := string(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE REQUEST", Bytes: raw}))
+	for _, material := range []string{csr + csr, "SECRET\n" + csr, csr + "SECRET"} {
+		request := EnrollmentRequest{ContractVersion: EnrollmentContractVersion, NodeID: "node-a", TargetID: "target-a", Runtime: "docker", Nonce: "nonce", CSRPEM: material}
+		if err := request.Validate(); err == nil {
+			t.Fatal("ambiguous CSR accepted")
+		}
+	}
+}

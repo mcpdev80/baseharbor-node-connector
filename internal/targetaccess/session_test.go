@@ -150,7 +150,7 @@ func newTestCA(t *testing.T) (*x509.Certificate, *ecdsa.PrivateKey, []byte) {
 	return parsed, key, pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der})
 }
 
-func newTestLeaf(t *testing.T, ca *x509.Certificate, caKey *ecdsa.PrivateKey, caPEM []byte, identity string, serial *big.Int) testTLSMaterial {
+func newTestLeaf(t *testing.T, ca *x509.Certificate, caKey *ecdsa.PrivateKey, caPEM []byte, identity string, serial *big.Int, usages ...x509.ExtKeyUsage) testTLSMaterial {
 	t.Helper()
 	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
@@ -160,13 +160,16 @@ func newTestLeaf(t *testing.T, ca *x509.Certificate, caKey *ecdsa.PrivateKey, ca
 	if err != nil {
 		t.Fatal(err)
 	}
+	if len(usages) == 0 {
+		usages = []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth, x509.ExtKeyUsageServerAuth}
+	}
 	cert := &x509.Certificate{
 		SerialNumber: serial,
 		Subject:      pkix.Name{CommonName: identity},
 		NotBefore:    time.Now().Add(-time.Hour),
 		NotAfter:     time.Now().Add(time.Hour),
 		KeyUsage:     x509.KeyUsageDigitalSignature,
-		ExtKeyUsage:  []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth, x509.ExtKeyUsageServerAuth},
+		ExtKeyUsage:  usages,
 		URIs:         []*url.URL{uri},
 	}
 	der, err := x509.CreateCertificate(rand.Reader, cert, ca, &key.PublicKey, caKey)

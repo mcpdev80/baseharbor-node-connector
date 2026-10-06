@@ -298,3 +298,14 @@ Enrollment/renewal installation additionally:
 - rejects symlinked identity directories.
 
 Private key material remains local throughout enrollment and renewal.
+
+
+## Enrollment certificate admission
+
+Installation requires a single client-only leaf certificate bound to the locally
+held key and expected node URI. CA leaves, server/dual-purpose usage, unexpected
+SANs, mismatched validity and additional PEM material fail before identity files
+are changed. Trust files contain only CA certificates. CSR input is one signed
+PKCS#10 request within 64 KiB; prefixes, trailing material and multiple requests
+are rejected. This source boundary does not qualify the pending Core enrollment
+endpoint or remote lifecycle integration.

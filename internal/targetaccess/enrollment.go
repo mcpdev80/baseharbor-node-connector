@@ -35,8 +35,8 @@ func (r EnrollmentRequest) Validate() error {
 			return fmt.Errorf("%s is required", name)
 		}
 	}
-	block, _ := pem.Decode([]byte(r.CSRPEM))
-	if block == nil || block.Type != "CERTIFICATE REQUEST" {
+	block, rest := pem.Decode([]byte(r.CSRPEM))
+	if len(r.CSRPEM) > 65536 || block == nil || block.Type != "CERTIFICATE REQUEST" || len(block.Headers) != 0 || strings.TrimSpace(string(rest)) != "" || !strings.HasPrefix(strings.TrimSpace(r.CSRPEM), "-----BEGIN CERTIFICATE REQUEST-----") {
 		return errors.New("csr_pem must contain one PKCS#10 certificate request")
 	}
 	csr, err := x509.ParseCertificateRequest(block.Bytes)

@@ -3,7 +3,6 @@ package targetaccess
 import (
 	"crypto/tls"
 	"crypto/x509"
-	"encoding/pem"
 	"errors"
 	"fmt"
 	"net/url"
@@ -167,27 +166,5 @@ func loadCertPool(path string) (*x509.CertPool, error) {
 	if err != nil {
 		return nil, fmt.Errorf("read trust bundle: %w", err)
 	}
-	pool := x509.NewCertPool()
-	rest := data
-	var count int
-	for {
-		block, next := pem.Decode(rest)
-		if block == nil {
-			break
-		}
-		rest = next
-		if block.Type != "CERTIFICATE" {
-			continue
-		}
-		cert, err := x509.ParseCertificate(block.Bytes)
-		if err != nil {
-			return nil, fmt.Errorf("parse trust certificate: %w", err)
-		}
-		pool.AddCert(cert)
-		count++
-	}
-	if count == 0 {
-		return nil, errors.New("trust bundle contains no certificates")
-	}
-	return pool, nil
+	return parseCertPool(data)
 }
