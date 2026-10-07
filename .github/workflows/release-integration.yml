@@ -89,7 +89,7 @@ jobs:
       uses: actions/checkout@v7.0.1
       with:
         repository: mcpdev80/baseharbor-console
-        ref: 135bea0af4a328ce52fe94cf06edbc840de47bae
+        ref: 49cf9a9ad658ec33d43ece8676f2c23a8a1b652d
         path: .browser-console-source
         persist-credentials: false
     - name: Bind isolated fixture directory
