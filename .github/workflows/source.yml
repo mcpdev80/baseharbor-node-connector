@@ -37,8 +37,8 @@ jobs:
           test "$(git -C .core-contract-source rev-parse HEAD)" = deb7443fb6fd15b5f39870d0795b47cbb036f07d
           cmp internal/targetaccess/canonical/wire.schema.json .core-contract-source/contracts/targetaccess/v1/wire.schema.json
           cmp internal/targetaccess/canonical/wire.golden.json .core-contract-source/contracts/targetaccess/v1/wire.golden.json
-          echo 'ee06d7cefd5a25037ebc104a32144b10578f052a820fec67d7200307c6bebc39  internal/targetaccess/canonical/wire.schema.json' | sha256sum -c -
-          echo '3bb43b956136580fe2f6254ad7f7a37e852635eb93cd4fdd51392a5ad4121bdd  internal/targetaccess/canonical/wire.golden.json' | sha256sum -c -
+          echo 'f6d4b7de6d8ba129faf9664857f80bd93873e59aeea577fc36de64f94039cedc  internal/targetaccess/canonical/wire.schema.json' | sha256sum -c -
+          echo '30b0eaa2d37c56e8e2add4403f8cd0f630df9d898120201c8b49fe472fd5ab27  internal/targetaccess/canonical/wire.golden.json' | sha256sum -c -
       - name: Verify exact candidate source formatting
         shell: bash
         run: |
@@ -56,7 +56,7 @@ jobs:
         run: |
           python3 - <<'PY'
           import json, os, subprocess
-          result={'schema':'baseharbor.private-source-receipt/v1','repository':os.environ['GITHUB_REPOSITORY'],'commit':subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip(),'core_commit':'deb7443fb6fd15b5f39870d0795b47cbb036f07d','wire_schema_sha256':'ee06d7cefd5a25037ebc104a32144b10578f052a820fec67d7200307c6bebc39','source_result':'success','runtime_evidence':False,'release_eligible':False,'formatting_applied':bool(subprocess.check_output(['git','diff','--name-only','--','cmd','internal'],text=True).strip()),'run_id':os.environ['GITHUB_RUN_ID'],'run_attempt':os.environ['GITHUB_RUN_ATTEMPT']}
+          result={'schema':'baseharbor.private-source-receipt/v1','repository':os.environ['GITHUB_REPOSITORY'],'commit':subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip(),'core_commit':'deb7443fb6fd15b5f39870d0795b47cbb036f07d','wire_schema_sha256':'f6d4b7de6d8ba129faf9664857f80bd93873e59aeea577fc36de64f94039cedc','source_result':'success','runtime_evidence':False,'release_eligible':False,'formatting_applied':bool(subprocess.check_output(['git','diff','--name-only','--','cmd','internal'],text=True).strip()),'run_id':os.environ['GITHUB_RUN_ID'],'run_attempt':os.environ['GITHUB_RUN_ATTEMPT']}
           open('connector-source-receipt.json','w').write(json.dumps(result,indent=2)+'\n')
           PY
       - uses: actions/upload-artifact@v6
