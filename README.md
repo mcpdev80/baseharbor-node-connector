@@ -138,3 +138,22 @@ Target Access v1 is implemented with:
 The Core/control-plane CA issuance and enrollment HTTP endpoint remain a
 BaseHarbor Core responsibility. Kubernetes/OpenShift continue to use their
 native authenticated API access path rather than this connector.
+
+
+## Validation
+
+The repository contains focused Go tests for the security and transport boundaries, including Target Access negotiation, enrollment/install material, traversal-safe staging, runtime capability projection and connector session behavior.
+
+Run the public quality gate locally with:
+
+```bash
+go test ./...
+go vet ./...
+go build ./cmd/baseharbor-node-connector
+```
+
+The same commands are enforced by the repository CI workflow. End-to-end support still requires pinned BaseHarbor Core -> Connector -> Docker/Podman evidence; unit/package success alone is not a support claim.
+
+## License and security
+
+This repository is licensed under Apache License 2.0. Security reports must use the private vulnerability reporting path described in [SECURITY.md](SECURITY.md).
