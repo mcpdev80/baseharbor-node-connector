@@ -74,7 +74,14 @@ func TestNativePublishedCompletion(t *testing.T) {
 				for {
 					observation, err := manager.ObservePublished(ctx, root, directory, file, content)
 					if err != nil {
-						t.Fatal("native init evidence unavailable", err)
+						// A short-lived native container can disappear between
+						// exists and inspect. Repeat only the bounded read-only
+						// observation; successful settled evidence is mandatory.
+						if time.Now().After(deadline) || ctx.Err() != nil {
+							t.Fatal("native init evidence unavailable within convergence bound", err)
+						}
+						time.Sleep(100 * time.Millisecond)
+						continue
 					}
 					settled := (observation.ActiveState == "inactive" && observation.SubState == "dead") || observation.ActiveState == "failed" || (observation.ActiveState == "active" && observation.SubState == "exited")
 					if observation.FinishedMicros != 0 && settled {
