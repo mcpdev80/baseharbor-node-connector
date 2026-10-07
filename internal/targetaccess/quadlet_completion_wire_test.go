@@ -42,3 +42,36 @@ func TestQuadletCompletionWireCannotSelectUnstagedOrMutableExecution(t *testing.
 		}
 	}
 }
+
+func TestManagedActivationRequiresImmutablePublishedBundle(t *testing.T) {
+	raw, err := ReadTargetAccessGoldenFixtures()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var fixtures []struct {
+		Wire json.RawMessage `json:"wire"`
+	}
+	if json.Unmarshal(raw, &fixtures) != nil {
+		t.Fatal("invalid fixtures")
+	}
+	var valid map[string]any
+	for _, fixture := range fixtures {
+		var record map[string]any
+		if json.Unmarshal(fixture.Wire, &record) == nil && record["request_id"] == "request-quadlet-core-managed" {
+			valid = record
+		}
+	}
+	if valid == nil {
+		t.Fatal("missing Core managed fixture")
+	}
+	good, _ := json.Marshal(valid)
+	if err := ValidateTargetAccessRecord("request", good); err != nil {
+		t.Fatal(err)
+	}
+	payload := valid["payload"].(map[string]any)
+	delete(payload, "project_directory")
+	bad, _ := json.Marshal(valid)
+	if ValidateTargetAccessRecord("request", bad) == nil {
+		t.Fatal("unstaged managed activation accepted")
+	}
+}

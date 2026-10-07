@@ -116,16 +116,20 @@ func (m *Manager) Apply(ctx context.Context, name, content string, enable bool) 
 }
 
 func (m *Manager) applyOwned(ctx context.Context, name, unit, content string, enable bool) error {
+	return m.applyOwnedActivation(ctx, name, unit, content, enable, enable)
+}
+
+func (m *Manager) applyOwnedActivation(ctx context.Context, name, unit, content string, start, autostart bool) error {
 	if err := m.writeOwned(ctx, name, []byte(content)); err != nil {
 		return err
 	}
-	if err := m.setActivation(ctx, name, enable); err != nil {
+	if err := m.setActivation(ctx, name, autostart); err != nil {
 		return err
 	}
 	if _, err := m.runner.Run(ctx, nil, "systemctl", "--user", "daemon-reload"); err != nil {
 		return err
 	}
-	if enable {
+	if start {
 		_, err := m.runner.Run(ctx, nil, "systemctl", "--user", "restart", unit)
 		return err
 	}

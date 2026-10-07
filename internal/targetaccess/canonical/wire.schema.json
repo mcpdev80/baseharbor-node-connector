@@ -440,7 +440,15 @@
         "project_directory": {
           "type": "string",
           "pattern": "^bundles/\\.object-[0-9a-f]{32}$"
+        },
+        "autostart": {
+          "type": "boolean"
         }
+      },
+      "dependentRequired": {
+        "autostart": [
+          "project_directory"
+        ]
       }
     },
     "quadlet_name": {

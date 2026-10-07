@@ -17,6 +17,16 @@ const bundlePathPrefix = "@BASEHARBOR_BUNDLE@/"
 // ApplyPublished consumes exact committed source, then resolves only explicit
 // bundle file references on this node. The Core never supplies a node host path.
 func (m *Manager) ApplyPublished(ctx context.Context, root *fssecure.Root, directory, name, content string, enable bool) error {
+	return m.applyPublished(ctx, root, directory, name, content, enable, enable)
+}
+
+// ApplyPublishedManaged starts exact published source only on Core request.
+// It clears automatic target activation so a later boot requires Core approval.
+func (m *Manager) ApplyPublishedManaged(ctx context.Context, root *fssecure.Root, directory, name, content string, enable bool) error {
+	return m.applyPublished(ctx, root, directory, name, content, enable, false)
+}
+
+func (m *Manager) applyPublished(ctx context.Context, root *fssecure.Root, directory, name, content string, enable, autostart bool) error {
 	_, unit, err := m.resolve(name)
 	if err != nil {
 		return err
@@ -38,7 +48,7 @@ func (m *Manager) ApplyPublished(ctx context.Context, root *fssecure.Root, direc
 			return err
 		}
 	}
-	return m.applyOwned(ctx, name, unit, resolved, enable)
+	return m.applyOwnedActivation(ctx, name, unit, resolved, enable, autostart)
 }
 
 func resolvePublishedContent(root *fssecure.Root, directory, name, content string) (string, error) {

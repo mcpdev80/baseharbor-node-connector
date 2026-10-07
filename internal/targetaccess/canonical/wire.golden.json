@@ -238,5 +238,25 @@
         "project_directory": "bundles/.object-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
       }
     }
+  },
+  {
+    "record": "request",
+    "wire": {
+      "contract_version": "baseharbor.target-access/v1",
+      "protocol_version": "1",
+      "request_id": "request-quadlet-core-managed",
+      "correlation_id": "execution-fixture-a",
+      "target_id": "lab",
+      "operation": "runtime.quadlet.apply",
+      "issued_at": "2026-10-06T02:00:00Z",
+      "deadline_at": "2026-10-06T02:05:00Z",
+      "payload": {
+        "name": "workload.container",
+        "content": "[Container]\nImage=example/image:fixture\nVolume=@BASEHARBOR_BUNDLE@/tls/key.pem:/run/key.pem:ro\n",
+        "enable": true,
+        "project_directory": "bundles/.object-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "autostart": false
+      }
+    }
   }
 ]

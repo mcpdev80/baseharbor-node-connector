@@ -69,6 +69,7 @@ type ComposeDestroyRequest struct {
 }
 
 type QuadletApplyRequest struct {
+	Autostart        *bool  `json:"autostart,omitempty"`
 	Name             string `json:"name"`
 	Content          string `json:"content"`
 	Enable           bool   `json:"enable,omitempty"`

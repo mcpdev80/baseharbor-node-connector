@@ -334,3 +334,12 @@ unresolved request content) and `completed: true`. Core revalidates all four
 fields against its scoped immutable project before accepting the observation.
 This primitive does not itself qualify the complete remote Application lifecycle
 or authorize enabling unqualified completion-dependency realization.
+
+Published Quadlet apply accepts optional `autostart`. Core uses `enable: true,
+autostart: false` for completion-dependent graphs: the node starts the exact
+published owned unit and clears WantedBy, RequiredBy, UpheldBy and Alias target
+activation. A later boot therefore requires Core to verify init completion again
+before it starts the dependent. Omitting `autostart` retains ordinary apply
+behavior; specifying it requires `project_directory`. This is a bounded activation
+instruction, not application policy or a new node authority. Target membership
+checks do not claim an actual reboot or full Application lifecycle qualification.
