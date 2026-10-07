@@ -149,6 +149,15 @@ func (m *Manager) Remove(ctx context.Context, name string) error {
 	if err := m.verifyOwned(activation); err != nil {
 		return err
 	}
+	executionReceipt := executionBindingName(name)
+	_, executionErr := os.Lstat(filepath.Join(m.baseDir, executionReceipt))
+	if executionErr == nil {
+		if err := m.verifyOwned(executionReceipt); err != nil {
+			return err
+		}
+	} else if !errors.Is(executionErr, os.ErrNotExist) {
+		return executionErr
+	}
 	content, err := os.ReadFile(path)
 	if err != nil {
 		return err
@@ -169,6 +178,11 @@ func (m *Manager) Remove(ctx context.Context, name string) error {
 	}
 	if err := os.Remove(filepath.Join(m.baseDir, activation)); err != nil {
 		return err
+	}
+	if executionErr == nil {
+		if err := os.Remove(filepath.Join(m.baseDir, executionReceipt)); err != nil {
+			return err
+		}
 	}
 	_, err = m.runner.Run(ctx, nil, "systemctl", "--user", "daemon-reload")
 	return err

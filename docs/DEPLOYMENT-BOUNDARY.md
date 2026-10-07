@@ -183,3 +183,13 @@ protected ownership receipt and exact published Core bundle content, including
 resolved Node file bindings. The loaded systemd SourcePath must match the owned
 unit. Bounded native exit/start timestamps distinguish evidence from mere
 inactivity. Transport exposure and native init-unit qualification remain pending.
+
+Published container activation now retains a protected receipt for the exact
+resolved source digest, current Linux boot identity and a monotonic activation
+lower bound. Completion requires native successful exit evidence after that
+bound on the same boot; old success cannot qualify a changed or unexecuted
+publication. Missing, altered or foreign receipts are denied. Ordinary removal
+cleans the current receipt while retained immutable ownership history stays
+outside generator search paths. The focused native manager test must qualify
+this source independently; the completion observation is still not exposed over
+Target Access, and the full Core Application lifecycle remains unqualified.

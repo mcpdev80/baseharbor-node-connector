@@ -33,6 +33,11 @@ func (m *Manager) ApplyPublished(ctx context.Context, root *fssecure.Root, direc
 	if err := m.checkPublishedNativeOwnership(ctx, name, resolved); err != nil {
 		return err
 	}
+	if enable && filepath.Ext(name) == ".container" {
+		if err := m.bindPublishedExecution(ctx, name, resolved); err != nil {
+			return err
+		}
+	}
 	return m.applyOwned(ctx, name, unit, resolved, enable)
 }
 
