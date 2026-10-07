@@ -115,7 +115,7 @@ Source checks are separate from exact-ref production/runtime qualification.
 
 The opt-in `runtime-validation/enrollment/**` push runs the separately built
 Connector against the exact public Core harness at
-`d02461d7e052e93f7738d5be472dfb032d4fb8c2`, with actual OpenBao 2.7.0, isolated
+`deb7443fb6fd15b5f39870d0795b47cbb036f07d`, with actual OpenBao 2.7.0, isolated
 PostgreSQL storage/admission and either Docker or rootless Podman. It exchanges
 a persisted one-use Core grant over verified HTTPS, opens outbound mTLS, retains
 the local node key during explicit renewal, verifies live CA overlap and old-root
@@ -140,3 +140,5 @@ Compose or rootless Podman Quadlet apply, observed running state, explicit
 repair, destroy and foreign-resource preservation. This realizes already
 authorized project decisions; the complete Core Application planning, provider
 placement and secret binding journey remains a separate required release proof.
+
+Published Quadlet apply can bind its exact content to an immutable staging publication. Read-only TLS binds and owner-only environment files resolve only on the selected Node; Core host paths and build inputs are not transferred. Native name collisions require protected realization ownership and matching runtime labels. The Core graph adapter publishes resource definitions before containers and removes containers before definitions, preserving provider data. Actual generated SQL graph qualification on Podman is pending; this primitive still does not qualify the full Application engine or make a release-eligible receipt.

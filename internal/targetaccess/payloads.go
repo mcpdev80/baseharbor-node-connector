@@ -69,9 +69,10 @@ type ComposeDestroyRequest struct {
 }
 
 type QuadletApplyRequest struct {
-	Name    string `json:"name"`
-	Content string `json:"content"`
-	Enable  bool   `json:"enable,omitempty"`
+	Name             string `json:"name"`
+	Content          string `json:"content"`
+	Enable           bool   `json:"enable,omitempty"`
+	ProjectDirectory string `json:"project_directory,omitempty"`
 }
 
 type QuadletNameRequest struct {

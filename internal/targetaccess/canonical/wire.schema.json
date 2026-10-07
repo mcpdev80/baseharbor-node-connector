@@ -435,6 +435,10 @@
         },
         "enable": {
           "type": "boolean"
+        },
+        "project_directory": {
+          "type": "string",
+          "pattern": "^bundles/\\.object-[0-9a-f]{32}$"
         }
       }
     },

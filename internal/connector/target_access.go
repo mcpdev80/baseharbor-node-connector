@@ -201,6 +201,9 @@ func (a *TargetAccess) execute(ctx context.Context, operation targetaccess.Opera
 		if err := decodePayload(payload, &request); err != nil {
 			return nil, err
 		}
+		if request.ProjectDirectory != "" {
+			return nil, a.service.Quadlet.ApplyPublished(ctx, a.service.Staging, request.ProjectDirectory, request.Name, request.Content, request.Enable)
+		}
 		return nil, a.service.Quadlet.Apply(ctx, request.Name, request.Content, request.Enable)
 	case targetaccess.OpQuadletRemove:
 		var request targetaccess.QuadletNameRequest
