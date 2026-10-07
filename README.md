@@ -146,8 +146,8 @@ native authenticated API access path rather than this connector.
 The connector-side foundation does not establish end-to-end Core lifecycle
 support. Core enrollment/session authority, shared canonical wire fixtures and
 real remote Docker/rootless Podman qualification are tracked in this repository's
-#3 and Core #807/#808. Exact private source revisions and diagnostic payloads stay
-in authorized private evidence. Cross-build success does not qualify a platform
+#3 and Core #807/#808. Exact source revisions and qualification receipts are retained as CI evidence;
+protected credentials are excluded. Cross-build success does not qualify a platform
 for runtime or terminal support.
 
 Enrollment destinations must use HTTPS with pinned server identity, without
@@ -157,7 +157,7 @@ read exclusively from the protected authorization file.
 ## Pinned Core wire and bootstrap binding
 
 The canonical schema and synthetic golden records are acquired from immutable
-public Core commit `3b7023224559720c67d89370cdcefa6736be79f6`. Their source lock and
+public Core commit specified in the source lock. The source revision and
 SHA-256 digests are in `internal/targetaccess/canonical/source-lock.json`; source
 CI compares both files byte for byte with that commit. Contract version remains
 v1 and is a pre-freeze draft. Production frames reject unknown fields, duplicate
