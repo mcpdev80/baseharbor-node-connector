@@ -116,7 +116,7 @@ Source checks are separate from exact-ref production/runtime qualification.
 
 The opt-in `runtime-validation/enrollment/**` push runs the separately built
 Connector against the exact public Core harness at
-`df0f4c35b12308694be543c3d5380ea471a65338`, with actual OpenBao 2.7.0, isolated
+`cfe348c6803c1bdc2c008fd644d8dd053dbb3455`, with actual OpenBao 2.7.0, isolated
 PostgreSQL storage/admission and either Docker or rootless Podman. It exchanges
 a persisted one-use Core grant over verified HTTPS, opens outbound mTLS, retains
 the local node key during explicit renewal, verifies live CA overlap and old-root
@@ -160,3 +160,5 @@ The newer pinned Core adds protected durable deployment-project commitments and
 preserves them through pending/applied/observed transitions. This subsequent
 source needs its own native rerun; the earlier successful receipt does not
 approve a newer source or the full Application lifecycle.
+
+Ordinary Quadlet removal retains immutable realization history outside generator search paths. Reapply of the exact unchanged network/volume source can reuse this protected history only when the active artifact is absent and native project labels still match. Foreign active units, changed source, altered permission commitments and missing receipts remain denied. Native ownership inspection and unit realization share the manager's operation lock. The new destroy/reapply SQL qualification must pass before this slice is considered natively qualified; explicit Podman data reset and the full Application journey remain separate requirements.

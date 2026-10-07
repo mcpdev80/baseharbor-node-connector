@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -72,7 +73,9 @@ func (m *Manager) checkPublishedNativeOwnership(ctx context.Context, unit, conte
 		return errors.New("native ownership inspection is unavailable")
 	}
 	if err := m.verifyOwned(unit); err != nil {
-		return errors.New("existing native resource has no owned realization receipt")
+		if kind == "container" || !errors.Is(err, os.ErrNotExist) || m.verifyRetainedResource(unit, []byte(content)) != nil {
+			return errors.New("existing native resource has no owned realization receipt")
+		}
 	}
 	result, err := m.runner.Run(ctx, nil, "podman", kind, "inspect", name)
 	if err != nil {

@@ -112,6 +112,10 @@ func (m *Manager) Apply(ctx context.Context, name, content string, enable bool) 
 		return err
 	}
 	defer release()
+	return m.applyOwned(ctx, name, unit, content, enable)
+}
+
+func (m *Manager) applyOwned(ctx context.Context, name, unit, content string, enable bool) error {
 	if err := m.writeOwned(ctx, name, []byte(content)); err != nil {
 		return err
 	}
@@ -122,9 +126,10 @@ func (m *Manager) Apply(ctx context.Context, name, content string, enable bool) 
 		return err
 	}
 	if enable {
-		_, err = m.runner.Run(ctx, nil, "systemctl", "--user", "restart", unit)
+		_, err := m.runner.Run(ctx, nil, "systemctl", "--user", "restart", unit)
+		return err
 	}
-	return err
+	return nil
 }
 
 func (m *Manager) Remove(ctx context.Context, name string) error {

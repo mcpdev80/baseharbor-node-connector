@@ -17,17 +17,23 @@ const bundlePathPrefix = "@BASEHARBOR_BUNDLE@/"
 // ApplyPublished consumes exact committed source, then resolves only explicit
 // bundle file references on this node. The Core never supplies a node host path.
 func (m *Manager) ApplyPublished(ctx context.Context, root *fssecure.Root, directory, name, content string, enable bool) error {
-	if _, _, err := m.resolve(name); err != nil {
+	_, unit, err := m.resolve(name)
+	if err != nil {
 		return err
 	}
 	resolved, err := resolvePublishedContent(root, directory, name, content)
 	if err != nil {
 		return err
 	}
+	release, err := m.acquire(ctx)
+	if err != nil {
+		return err
+	}
+	defer release()
 	if err := m.checkPublishedNativeOwnership(ctx, name, resolved); err != nil {
 		return err
 	}
-	return m.Apply(ctx, name, resolved, enable)
+	return m.applyOwned(ctx, name, unit, resolved, enable)
 }
 
 func resolvePublishedContent(root *fssecure.Root, directory, name, content string) (string, error) {
