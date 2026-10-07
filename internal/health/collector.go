@@ -29,6 +29,7 @@ func (c *Collector) Snapshot(ctx context.Context) Snapshot {
 		OperatingSystem: runtime.GOOS,
 		Architecture:    runtime.GOARCH,
 		CPUs:            runtime.NumCPU(),
+		NodeMemory:      readNodeMemory(),
 	}
 
 	command, err := c.kind.Command()

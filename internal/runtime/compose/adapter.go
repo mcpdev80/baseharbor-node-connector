@@ -108,6 +108,13 @@ func (a *Adapter) resolve(projectDirectory string, files []string, envFile strin
 	if a.staging == nil {
 		return "", nil, "", fmt.Errorf("staging root is required")
 	}
+	members := append([]string(nil), files...)
+	if envFile != "" {
+		members = append(members, envFile)
+	}
+	if err := a.staging.VerifyPublishedBundle(projectDirectory, members...); err != nil {
+		return "", nil, "", err
+	}
 	project, err := a.staging.Existing(projectDirectory)
 	if err != nil {
 		return "", nil, "", fmt.Errorf("resolve project directory: %w", err)

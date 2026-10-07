@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io"
 	"net"
-	"net/url"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -16,32 +15,38 @@ import (
 	"syscall"
 
 	"github.com/mcpdev80/baseharbor-node-connector/internal/connector"
+	bhruntime "github.com/mcpdev80/baseharbor-node-connector/internal/runtime"
 	"github.com/mcpdev80/baseharbor-node-connector/internal/targetaccess"
 )
 
-const defaultCoreIdentity = "spiffe://baseharbor/core/control-plane"
+const defaultCoreIdentity = "spiffe://baseharbor/platform/core/control-plane"
 
-var identitySegment = regexp.MustCompile(`^[A-Za-z0-9._-]+$`)
+var tenantIDPattern = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`)
+
+var identitySegment = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$`)
 
 type appConfig struct {
-	CoreAddress     string
-	ServerName      string
-	CoreIdentity    string
-	TargetID        string
-	NodeID          string
-	NodeIdentity    string
-	StateRoot       string
-	StagingRoot     string
-	QuadletRoot     string
-	CertificateFile string
-	PrivateKeyFile  string
-	TrustBundleFile string
-	RevokedSerials  string
-	BootstrapURL    string
-	BootstrapCA     string
-	BootstrapToken  string
-	RetainToken     bool
-	Sessions        int
+	Runtime                string
+	CoreAddress            string
+	ServerName             string
+	CoreIdentity           string
+	TenantID               string
+	TargetID               string
+	NodeID                 string
+	NodeIdentity           string
+	StateRoot              string
+	StagingRoot            string
+	QuadletRoot            string
+	CertificateFile        string
+	PrivateKeyFile         string
+	TrustBundleFile        string
+	RevokedSerials         string
+	BootstrapURL           string
+	BootstrapCA            string
+	BootstrapAuthorization string
+	RetainToken            bool
+	RenewCertificate       bool
+	Sessions               int
 }
 
 func main() {
@@ -60,14 +65,17 @@ func run(ctx context.Context, args []string, stderr io.Writer) error {
 	}
 
 	service, err := connector.Open(ctx, connector.Config{
-		StagingRoot: cfg.StagingRoot,
-		QuadletRoot: cfg.QuadletRoot,
+		Runtime:            bhruntime.Kind(cfg.Runtime),
+		StagingRoot:        cfg.StagingRoot,
+		TransportStateRoot: filepath.Join(cfg.StateRoot, "transport"),
+		QuadletRoot:        cfg.QuadletRoot,
 	})
 	if err != nil {
 		return err
 	}
 
 	identity := targetaccess.NodeIdentity{
+		TenantID: cfg.TenantID,
 		NodeID:   cfg.NodeID,
 		TargetID: cfg.TargetID,
 		Runtime:  string(service.Runtime.Kind),
@@ -85,17 +93,17 @@ func run(ctx context.Context, args []string, stderr io.Writer) error {
 		ExpectedPeerIdentity: cfg.CoreIdentity,
 		ServerName:           cfg.ServerName,
 	}
-	if needsEnrollment(tlsFiles) {
+	if cfg.RenewCertificate || needsEnrollment(tlsFiles) {
 		if strings.TrimSpace(cfg.BootstrapURL) == "" {
 			return errors.New("connector identity material is incomplete and no --bootstrap-url was configured")
 		}
 		_, err := targetaccess.BootstrapEnroll(ctx, targetaccess.BootstrapConfig{
-			EnrollmentURL:          cfg.BootstrapURL,
-			TrustBundleFile:        cfg.BootstrapCA,
-			TokenFile:              cfg.BootstrapToken,
-			ExpectedServerIdentity: cfg.CoreIdentity,
-			ServerName:             cfg.ServerName,
-			RetainBootstrapToken:   cfg.RetainToken,
+			EnrollmentURL:                cfg.BootstrapURL,
+			TrustBundleFile:              cfg.BootstrapCA,
+			AuthorizationFile:            cfg.BootstrapAuthorization,
+			ExpectedServerIdentity:       cfg.CoreIdentity,
+			ServerName:                   cfg.ServerName,
+			RetainBootstrapAuthorization: cfg.RetainToken,
 		}, tlsFiles, identity)
 		if err != nil {
 			return fmt.Errorf("bootstrap connector identity: %w", err)
@@ -109,6 +117,7 @@ func run(ctx context.Context, args []string, stderr io.Writer) error {
 	if err != nil {
 		return err
 	}
+	defer access.Close()
 	return access.RunOutboundPool(ctx, connector.OutboundPoolConfig{
 		OutboundConfig: connector.OutboundConfig{
 			Address: cfg.CoreAddress,
@@ -131,9 +140,11 @@ func parseConfig(args []string, stderr io.Writer) (appConfig, error) {
 	cfg := appConfig{}
 	fs := flag.NewFlagSet("baseharbor-node-connector", flag.ContinueOnError)
 	fs.SetOutput(stderr)
+	fs.StringVar(&cfg.Runtime, "runtime", env("BASEHARBOR_CONNECTOR_RUNTIME", ""), "enrolled Docker or Podman runtime; unavailable selections never fall back")
 	fs.StringVar(&cfg.CoreAddress, "core", env("BASEHARBOR_CONNECTOR_CORE", ""), "BaseHarbor Core host:port")
 	fs.StringVar(&cfg.ServerName, "server-name", env("BASEHARBOR_CONNECTOR_SERVER_NAME", ""), "TLS server DNS name")
 	fs.StringVar(&cfg.CoreIdentity, "core-identity", env("BASEHARBOR_CONNECTOR_CORE_IDENTITY", defaultCoreIdentity), "expected Core certificate identity")
+	fs.StringVar(&cfg.TenantID, "tenant-id", env("BASEHARBOR_CONNECTOR_TENANT_ID", ""), "Core tenant UUID bound to enrollment")
 	fs.StringVar(&cfg.TargetID, "target-id", env("BASEHARBOR_CONNECTOR_TARGET_ID", ""), "BaseHarbor Target ID")
 	fs.StringVar(&cfg.NodeID, "node-id", env("BASEHARBOR_CONNECTOR_NODE_ID", hostname), "connector node ID")
 	fs.StringVar(&cfg.NodeIdentity, "node-identity", env("BASEHARBOR_CONNECTOR_NODE_IDENTITY", ""), "connector certificate URI identity")
@@ -146,8 +157,9 @@ func parseConfig(args []string, stderr io.Writer) (appConfig, error) {
 	fs.StringVar(&cfg.RevokedSerials, "revoked-serials", env("BASEHARBOR_CONNECTOR_REVOKED_SERIALS", ""), "revoked peer serials path")
 	fs.StringVar(&cfg.BootstrapURL, "bootstrap-url", env("BASEHARBOR_CONNECTOR_BOOTSTRAP_URL", ""), "HTTPS enrollment endpoint")
 	fs.StringVar(&cfg.BootstrapCA, "bootstrap-ca", env("BASEHARBOR_CONNECTOR_BOOTSTRAP_CA", ""), "bootstrap CA bundle path")
-	fs.StringVar(&cfg.BootstrapToken, "bootstrap-token-file", env("BASEHARBOR_CONNECTOR_BOOTSTRAP_TOKEN_FILE", ""), "one-time bootstrap token file")
-	fs.BoolVar(&cfg.RetainToken, "retain-bootstrap-token", false, "retain bootstrap token after successful enrollment")
+	fs.StringVar(&cfg.BootstrapAuthorization, "bootstrap-authorization-file", env("BASEHARBOR_CONNECTOR_BOOTSTRAP_AUTHORIZATION_FILE", ""), "private Core-issued token/nonce/expiry JSON authorization")
+	fs.BoolVar(&cfg.RetainToken, "retain-bootstrap-authorization", false, "retain consumed bootstrap authorization after successful enrollment")
+	fs.BoolVar(&cfg.RenewCertificate, "renew-certificate", false, "exchange an explicit one-use Core renewal authorization for this existing node")
 	fs.IntVar(&cfg.Sessions, "sessions", 0, "outbound session count (default 4, max 32)")
 	if err := fs.Parse(args); err != nil {
 		return appConfig{}, err
@@ -155,18 +167,28 @@ func parseConfig(args []string, stderr io.Writer) (appConfig, error) {
 	if fs.NArg() != 0 {
 		return appConfig{}, errors.New("unexpected positional arguments")
 	}
+	if cfg.Runtime != "" && cfg.Runtime != "docker" && cfg.Runtime != "podman" {
+		return appConfig{}, errors.New("--runtime must be docker or podman")
+	}
+	if cfg.RenewCertificate && strings.TrimSpace(cfg.BootstrapURL) == "" {
+		return appConfig{}, errors.New("--renew-certificate requires an explicit --bootstrap-url and fresh Core renewal authorization")
+	}
 
+	cfg.TenantID = strings.TrimSpace(cfg.TenantID)
 	cfg.CoreAddress = strings.TrimSpace(cfg.CoreAddress)
 	cfg.TargetID = strings.TrimSpace(cfg.TargetID)
 	cfg.NodeID = strings.TrimSpace(cfg.NodeID)
 	if cfg.CoreAddress == "" {
 		return appConfig{}, errors.New("--core is required")
 	}
+	if !tenantIDPattern.MatchString(cfg.TenantID) {
+		return appConfig{}, errors.New("--tenant-id must be a canonical tenant UUID")
+	}
 	if cfg.TargetID == "" {
 		return appConfig{}, errors.New("--target-id is required")
 	}
 	if !identitySegment.MatchString(cfg.TargetID) || !identitySegment.MatchString(cfg.NodeID) {
-		return appConfig{}, errors.New("target-id and node-id may contain only letters, digits, dot, underscore and hyphen")
+		return appConfig{}, errors.New("target-id and node-id must be bounded alphanumeric, underscore or hyphen identity segments")
 	}
 	if cfg.ServerName == "" {
 		host, _, err := net.SplitHostPort(cfg.CoreAddress)
@@ -176,14 +198,16 @@ func parseConfig(args []string, stderr io.Writer) (appConfig, error) {
 		cfg.ServerName = strings.Trim(host, "[]")
 	}
 	if cfg.NodeIdentity == "" {
-		cfg.NodeIdentity = fmt.Sprintf(
-			"spiffe://baseharbor/target/%s/node/%s",
-			url.PathEscape(cfg.TargetID),
-			url.PathEscape(cfg.NodeID),
-		)
+		cfg.NodeIdentity = "spiffe://baseharbor/platform/connectors/" + cfg.TenantID + "/" + cfg.TargetID + "/" + cfg.NodeID
 	}
 
-	cfg.StateRoot = filepath.Clean(cfg.StateRoot)
+	if cfg.NodeIdentity != "spiffe://baseharbor/platform/connectors/"+cfg.TenantID+"/"+cfg.TargetID+"/"+cfg.NodeID {
+		return appConfig{}, errors.New("node identity must match the Core tenant/Target/node binding")
+	}
+	cfg.StateRoot, err = filepath.Abs(cfg.StateRoot)
+	if err != nil {
+		return appConfig{}, errors.New("invalid connector state root")
+	}
 	if cfg.StagingRoot == "" {
 		cfg.StagingRoot = filepath.Join(cfg.StateRoot, "staging")
 	}
@@ -200,8 +224,8 @@ func parseConfig(args []string, stderr io.Writer) (appConfig, error) {
 	if cfg.BootstrapCA == "" {
 		cfg.BootstrapCA = filepath.Join(cfg.StateRoot, "bootstrap-ca.pem")
 	}
-	if cfg.BootstrapToken == "" {
-		cfg.BootstrapToken = filepath.Join(cfg.StateRoot, "bootstrap.token")
+	if cfg.BootstrapAuthorization == "" {
+		cfg.BootstrapAuthorization = filepath.Join(cfg.StateRoot, "bootstrap.authorization.json")
 	}
 	return cfg, nil
 }

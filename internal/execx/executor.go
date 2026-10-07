@@ -1,13 +1,13 @@
 package execx
 
 import (
-	"bytes"
 	"context"
 	"fmt"
 	"io"
 	"os"
 	"os/exec"
 	"strings"
+	"time"
 )
 
 // Result is a bounded process result. Callers decide what output is safe to expose.
@@ -25,7 +25,10 @@ func (Runner) Run(ctx context.Context, env map[string]string, name string, args 
 		return Result{}, fmt.Errorf("executable is required")
 	}
 
-	cmd := exec.CommandContext(ctx, name, args...)
+	lifetime, cancel := context.WithCancel(ctx)
+	defer cancel()
+	cmd := exec.CommandContext(lifetime, name, args...)
+	cmd.WaitDelay = 2 * time.Second
 	cmd.Env = os.Environ()
 	for key, value := range env {
 		if strings.TrimSpace(key) == "" ||
@@ -38,7 +41,8 @@ func (Runner) Run(ctx context.Context, env map[string]string, name string, args 
 		cmd.Env = append(cmd.Env, key+"="+value)
 	}
 
-	var stdout, stderr bytes.Buffer
+	stdout := captureBuffer{cancel: cancel}
+	stderr := captureBuffer{cancel: cancel}
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 
@@ -49,6 +53,9 @@ func (Runner) Run(ctx context.Context, env map[string]string, name string, args 
 	}
 	if cmd.ProcessState != nil {
 		result.ExitCode = cmd.ProcessState.ExitCode()
+	}
+	if stdout.exceeded || stderr.exceeded {
+		return Result{ExitCode: result.ExitCode}, ErrCaptureLimit
 	}
 
 	if err != nil {

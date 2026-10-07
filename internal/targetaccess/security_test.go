@@ -11,7 +11,7 @@ import (
 )
 
 func TestVerifyPeerIdentityUsesExplicitSANIdentity(t *testing.T) {
-	uri, err := url.Parse("spiffe://baseharbor/node/node-a")
+	uri, err := url.Parse("spiffe://baseharbor/platform/connectors/11111111-1111-4111-8111-111111111111/target-a/node-a")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -19,13 +19,13 @@ func TestVerifyPeerIdentityUsesExplicitSANIdentity(t *testing.T) {
 		URIs:     []*url.URL{uri},
 		DNSNames: []string{"node-a.example"},
 	}
-	if err := verifyPeerIdentity(cert, "spiffe://baseharbor/node/node-a"); err != nil {
+	if err := verifyPeerIdentity(cert, "spiffe://baseharbor/platform/connectors/11111111-1111-4111-8111-111111111111/target-a/node-a"); err != nil {
 		t.Fatalf("URI identity rejected: %v", err)
 	}
 	if err := verifyPeerIdentity(cert, "node-a.example"); err != nil {
 		t.Fatalf("DNS identity rejected: %v", err)
 	}
-	if err := verifyPeerIdentity(cert, "spiffe://baseharbor/node/node-b"); err == nil {
+	if err := verifyPeerIdentity(cert, "spiffe://baseharbor/platform/connectors/11111111-1111-4111-8111-111111111111/target-a/node-b"); err == nil {
 		t.Fatal("wrong URI identity unexpectedly accepted")
 	}
 }
@@ -39,7 +39,7 @@ func TestTLSFilesRequireExplicitPeerIdentityAndTLS13(t *testing.T) {
 	if err := files.Validate(); err == nil {
 		t.Fatal("missing expected peer identity unexpectedly accepted")
 	}
-	files.ExpectedPeerIdentity = "spiffe://baseharbor/core/control-plane"
+	files.ExpectedPeerIdentity = "spiffe://baseharbor/platform/core/control-plane"
 	cfg, err := files.Config(TLSServer)
 	if err != nil {
 		t.Fatal(err)

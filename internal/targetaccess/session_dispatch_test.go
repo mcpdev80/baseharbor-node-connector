@@ -14,9 +14,12 @@ func TestReadInboundFrameClassifiesRequestAndStreamOpen(t *testing.T) {
 		ContractVersion: ContractVersion,
 		ProtocolVersion: ProtocolVersion,
 		RequestID:       "req-1",
+		CorrelationID:   "corr-a",
 		TargetID:        "target-a",
 		Operation:       OpCapabilities,
+		Payload:         json.RawMessage("{}"),
 		IssuedAt:        time.Now().UTC(),
+		DeadlineAt:      time.Now().UTC().Add(5 * time.Minute),
 	}
 	session := testReadSession(t, request)
 	frame, err := session.ReadInboundFrame()
@@ -27,7 +30,7 @@ func TestReadInboundFrameClassifiesRequestAndStreamOpen(t *testing.T) {
 		t.Fatalf("unexpected request frame: %#v", frame)
 	}
 
-	open := StreamOpen{
+	open := StreamOpen{DeadlineAt: time.Now().UTC().Add(5 * time.Minute), CorrelationID: "corr-a",
 		ContractVersion: ContractVersion,
 		ProtocolVersion: ProtocolVersion,
 		StreamID:        "stream-1",
@@ -77,5 +80,23 @@ func testReadSession(t *testing.T, value any) *Session {
 			ContractVersion: ContractVersion,
 			ProtocolVersion: ProtocolVersion,
 		},
+	}
+}
+
+func TestReadInboundFrameClassifiesCanonicalCancellation(t *testing.T) {
+	cancellation := Cancel{ContractVersion: ContractVersion, ProtocolVersion: ProtocolVersion, RequestID: "req-1", CorrelationID: "corr-a", Cancel: true}
+	frame, err := testReadSession(t, cancellation).ReadInboundFrame()
+	if err != nil || frame.Cancel == nil || frame.Cancel.RequestID != cancellation.RequestID || frame.Request != nil || frame.StreamOpen != nil {
+		t.Fatal("canonical cancellation was not classified exclusively", frame, err)
+	}
+	for _, data := range []map[string]any{
+		{"contract_version": ContractVersion, "protocol_version": ProtocolVersion, "request_id": "req-1", "correlation_id": "corr-a", "cancel": false},
+		{"contract_version": ContractVersion, "protocol_version": ProtocolVersion, "request_id": "req-1", "cancel": true},
+		{"operation": string(OpCapabilities), "cancel": true},
+		{"kind": string(StreamLogs), "cancel": true},
+	} {
+		if _, err := testReadSession(t, data).ReadInboundFrame(); err == nil {
+			t.Fatal("ambiguous or unbound cancellation was accepted")
+		}
 	}
 }

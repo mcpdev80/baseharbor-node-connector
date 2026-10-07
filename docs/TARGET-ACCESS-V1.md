@@ -34,7 +34,7 @@ protocol_version = 1
 Every request carries:
 
 - request ID;
-- optional audit correlation ID;
+- required Core execution correlation and absolute UTC deadline;
 - Target identity;
 - one allowlisted typed operation;
 - issuance timestamp;
@@ -165,7 +165,7 @@ baseharbor.target-access-enrollment/v1
 ```
 
 The connector generates its private key locally and sends only a signed PKCS#10
-CSR plus Node/Target/runtime identity and an anti-replay nonce.
+CSR plus tenant/Node/Target/runtime identity and the Core-bound anti-replay nonce.
 
 The enrollment response contains the assigned Node identity, certificate chain,
 trust bundle and certificate expiry. Private-key material is never returned by
@@ -173,12 +173,12 @@ or embedded in the enrollment response.
 
 The bootstrap client uses a pinned bootstrap trust bundle, HTTPS with TLS 1.3,
 normal X.509 hostname verification plus explicit expected Core URI/DNS SAN
-identity, and a one-time bearer token stored in a private local file. The
+identity, and a Core-issued token/nonce/expiry JSON authorization stored in a private local file. The
 connector creates an Ed25519 private key locally when none exists, sends only a
-signed CSR, requires the enrollment response to echo the random request nonce,
+signed CSR, uses the Core-bound nonce unchanged and requires the response to echo it,
 binds the returned Node/Target/runtime/identity to the request, verifies the
 issued certificate and chain, installs certificate/trust material atomically,
-and consumes the bootstrap token after successful installation by default.
+and removes the consumed bootstrap authorization file after successful installation by default.
 
 Redirects are not followed during enrollment, preventing bootstrap credentials
 from being forwarded to another endpoint. The CA/issuance backend itself
@@ -298,3 +298,18 @@ Enrollment/renewal installation additionally:
 - rejects symlinked identity directories.
 
 Private key material remains local throughout enrollment and renewal.
+
+
+## Enrollment certificate admission
+
+Installation requires a single client-only leaf certificate bound to the locally
+held key and expected node URI. CA leaves, server/dual-purpose usage, unexpected
+SANs, mismatched validity and additional PEM material fail before identity files
+are changed. Trust files contain only CA certificates. CSR input is one signed
+PKCS#10 request within 64 KiB; prefixes, trailing material and multiple requests
+are rejected. This source boundary does not qualify the pending Core enrollment
+endpoint or remote lifecycle integration.
+
+Canonical acquisition and bootstrap JSON/tenant requirements follow the
+[pinned Core wire boundary](../README.md#pinned-core-wire-and-bootstrap-binding).
+Source checks are separate from exact-ref production/runtime qualification.

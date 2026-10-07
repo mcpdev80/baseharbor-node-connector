@@ -6,8 +6,10 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/mcpdev80/baseharbor-node-connector/internal/execx"
 )
@@ -16,11 +18,12 @@ var allowedExtensions = map[string]struct{}{
 	".build":     {},
 	".container": {},
 	".image":     {},
-	".kube":      {},
 	".network":   {},
 	".pod":       {},
 	".volume":    {},
 }
+
+var artifactNamePattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_-]{0,63}\.(container|network|volume|pod|image|build)$`)
 
 type Entry struct {
 	Name    string `json:"name"`
@@ -32,8 +35,9 @@ type Entry struct {
 }
 
 type Manager struct {
-	baseDir string
-	runner  execx.Runner
+	baseDir    string
+	runner     execx.Runner
+	operations chan struct{}
 }
 
 func NewManager(baseDir string) (*Manager, error) {
@@ -48,7 +52,14 @@ func NewManager(baseDir string) (*Manager, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Manager{baseDir: abs, runner: execx.Runner{}}, nil
+	return &Manager{baseDir: abs, runner: execx.Runner{}, operations: make(chan struct{}, 1)}, nil
+}
+
+func (m *Manager) Available(ctx context.Context) bool {
+	probe, cancel := context.WithTimeout(ctx, 2*time.Second)
+	defer cancel()
+	_, err := m.runner.Run(probe, nil, "systemctl", "--user", "show-environment")
+	return err == nil
 }
 
 func (m *Manager) List(ctx context.Context) ([]Entry, error) {
@@ -82,43 +93,40 @@ func (m *Manager) List(ctx context.Context) ([]Entry, error) {
 	return result, nil
 }
 
+func (m *Manager) acquire(ctx context.Context) (func(), error) {
+	select {
+	case m.operations <- struct{}{}:
+		return func() { <-m.operations }, nil
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+}
+
 func (m *Manager) Apply(ctx context.Context, name, content string, enable bool) error {
-	path, _, err := m.resolve(name)
+	_, unit, err := m.resolve(name)
 	if err != nil {
 		return err
 	}
-	if err := os.MkdirAll(m.baseDir, 0o700); err != nil {
-		return err
-	}
-	tmp, err := os.CreateTemp(m.baseDir, ".baseharbor-quadlet-*")
+	release, err := m.acquire(ctx)
 	if err != nil {
 		return err
 	}
-	tmpName := tmp.Name()
-	defer os.Remove(tmpName)
-	if err := tmp.Chmod(0o600); err != nil {
-		_ = tmp.Close()
+	defer release()
+	return m.applyOwned(ctx, name, unit, content, enable)
+}
+
+func (m *Manager) applyOwned(ctx context.Context, name, unit, content string, enable bool) error {
+	if err := m.writeOwned(ctx, name, []byte(content)); err != nil {
 		return err
 	}
-	if _, err := tmp.WriteString(content); err != nil {
-		_ = tmp.Close()
-		return err
-	}
-	if err := tmp.Sync(); err != nil {
-		_ = tmp.Close()
-		return err
-	}
-	if err := tmp.Close(); err != nil {
-		return err
-	}
-	if err := os.Rename(tmpName, path); err != nil {
+	if err := m.setActivation(ctx, name, enable); err != nil {
 		return err
 	}
 	if _, err := m.runner.Run(ctx, nil, "systemctl", "--user", "daemon-reload"); err != nil {
 		return err
 	}
 	if enable {
-		_, err = m.runner.Run(ctx, nil, "systemctl", "--user", "enable", "--now", unitName(name))
+		_, err := m.runner.Run(ctx, nil, "systemctl", "--user", "restart", unit)
 		return err
 	}
 	return nil
@@ -129,38 +137,92 @@ func (m *Manager) Remove(ctx context.Context, name string) error {
 	if err != nil {
 		return err
 	}
-	_, _ = m.runner.Run(ctx, nil, "systemctl", "--user", "disable", "--now", unit)
-	if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
+	release, err := m.acquire(ctx)
+	if err != nil {
 		return err
+	}
+	defer release()
+	if err := m.verifyOwned(name); err != nil {
+		return err
+	}
+	activation := filepath.Join(name+".d", "99-baseharbor-activation.conf")
+	if err := m.verifyOwned(activation); err != nil {
+		return err
+	}
+	executionReceipt := executionBindingName(name)
+	_, executionErr := os.Lstat(filepath.Join(m.baseDir, executionReceipt))
+	if executionErr == nil {
+		if err := m.verifyOwned(executionReceipt); err != nil {
+			return err
+		}
+	} else if !errors.Is(executionErr, os.ErrNotExist) {
+		return executionErr
+	}
+	content, err := os.ReadFile(path)
+	if err != nil {
+		return err
+	}
+	// Managed project units have both protected realization receipts and
+	// explicit native ownership labels. Recheck the latter before stopping:
+	// an old unit receipt cannot authorize a subsequently replaced resource.
+	if strings.Contains(string(content), "Label=com.docker.compose.project=") {
+		if err := m.checkPublishedNativeOwnership(ctx, name, string(content)); err != nil {
+			return err
+		}
+	}
+	if _, err := m.runner.Run(ctx, nil, "systemctl", "--user", "stop", unit); err != nil {
+		return err
+	}
+	if err := os.Remove(path); err != nil {
+		return err
+	}
+	if err := os.Remove(filepath.Join(m.baseDir, activation)); err != nil {
+		return err
+	}
+	if executionErr == nil {
+		if err := os.Remove(filepath.Join(m.baseDir, executionReceipt)); err != nil {
+			return err
+		}
 	}
 	_, err = m.runner.Run(ctx, nil, "systemctl", "--user", "daemon-reload")
 	return err
 }
 
-func (m *Manager) Enable(ctx context.Context, name string) error {
+func (m *Manager) Enable(ctx context.Context, name string) error { return m.activate(ctx, name, true) }
+func (m *Manager) Disable(ctx context.Context, name string) error {
+	return m.activate(ctx, name, false)
+}
+
+func (m *Manager) activate(ctx context.Context, name string, active bool) error {
 	_, unit, err := m.resolve(name)
 	if err != nil {
+		return err
+	}
+	release, err := m.acquire(ctx)
+	if err != nil {
+		return err
+	}
+	defer release()
+	if err := m.verifyOwned(name); err != nil {
+		return err
+	}
+	if err := m.setActivation(ctx, name, active); err != nil {
 		return err
 	}
 	if _, err := m.runner.Run(ctx, nil, "systemctl", "--user", "daemon-reload"); err != nil {
 		return err
 	}
-	_, err = m.runner.Run(ctx, nil, "systemctl", "--user", "enable", "--now", unit)
-	return err
-}
-
-func (m *Manager) Disable(ctx context.Context, name string) error {
-	_, unit, err := m.resolve(name)
-	if err != nil {
-		return err
+	operation := "stop"
+	if active {
+		operation = "start"
 	}
-	_, err = m.runner.Run(ctx, nil, "systemctl", "--user", "disable", "--now", unit)
+	_, err = m.runner.Run(ctx, nil, "systemctl", "--user", operation, unit)
 	return err
 }
 
 func (m *Manager) resolve(name string) (string, string, error) {
 	name = strings.TrimSpace(name)
-	if name == "" || strings.Contains(name, "/") || strings.Contains(name, "\\") || strings.ContainsAny(name, "\x00\r\n") {
+	if !artifactNamePattern.MatchString(name) {
 		return "", "", fmt.Errorf("invalid quadlet name")
 	}
 	ext := strings.ToLower(filepath.Ext(name))
@@ -179,5 +241,9 @@ func (m *Manager) state(ctx context.Context, action, unit string) string {
 }
 
 func unitName(name string) string {
-	return strings.TrimSuffix(name, filepath.Ext(name)) + ".service"
+	base, extension := strings.TrimSuffix(name, filepath.Ext(name)), filepath.Ext(name)
+	if extension != ".container" {
+		base += "-" + strings.TrimPrefix(extension, ".")
+	}
+	return base + ".service"
 }

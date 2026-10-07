@@ -84,7 +84,7 @@ func (a *Adapter) StartTerminal(ctx context.Context, id string, request Terminal
 	args = append(args, request.Argv...)
 
 	cmd := exec.CommandContext(ctx, command, args...)
-	ptmx, err := pty.StartWithSize(cmd, &pty.Winsize{Rows: request.Rows, Cols: request.Cols})
+	ptmx, err := startTransportPTY(cmd, request.Rows, request.Cols)
 	if err != nil {
 		return nil, err
 	}

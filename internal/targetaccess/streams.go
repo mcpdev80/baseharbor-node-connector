@@ -1,6 +1,7 @@
 package targetaccess
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -18,10 +19,11 @@ type StreamOpen struct {
 	ContractVersion string                 `json:"contract_version"`
 	ProtocolVersion string                 `json:"protocol_version"`
 	StreamID        string                 `json:"stream_id"`
-	CorrelationID   string                 `json:"correlation_id,omitempty"`
+	CorrelationID   string                 `json:"correlation_id"`
 	TargetID        string                 `json:"target_id"`
 	ResourceID      string                 `json:"resource_id"`
 	Kind            StreamKind             `json:"kind"`
+	DeadlineAt      time.Time              `json:"deadline_at"`
 	ResumeAfter     uint64                 `json:"resume_after,omitempty"`
 	Logs            *LogStreamOptions      `json:"logs,omitempty"`
 	Terminal        *TerminalStreamOptions `json:"terminal,omitempty"`
@@ -43,6 +45,11 @@ type TerminalStreamOptions struct {
 }
 
 func (o StreamOpen) Validate() error {
+	data, err := json.Marshal(o)
+	if err != nil || ValidateTargetAccessRecord("stream_open", data) != nil {
+		return ErrTargetAccessWire
+	}
+
 	if o.ContractVersion != ContractVersion || o.ProtocolVersion != ProtocolVersion {
 		return errors.New("unsupported stream contract/protocol version")
 	}
@@ -96,7 +103,7 @@ type StreamEvent struct {
 	ContractVersion string          `json:"contract_version"`
 	ProtocolVersion string          `json:"protocol_version"`
 	StreamID        string          `json:"stream_id"`
-	CorrelationID   string          `json:"correlation_id,omitempty"`
+	CorrelationID   string          `json:"correlation_id"`
 	Sequence        uint64          `json:"sequence"`
 	ObservedAt      time.Time       `json:"observed_at"`
 	Type            StreamEventType `json:"type"`
@@ -108,6 +115,11 @@ type StreamEvent struct {
 }
 
 func (e StreamEvent) Validate() error {
+	data, err := json.Marshal(e)
+	if err != nil || ValidateTargetAccessRecord("stream_event", data) != nil {
+		return ErrTargetAccessWire
+	}
+
 	if e.ContractVersion != ContractVersion || e.ProtocolVersion != ProtocolVersion {
 		return errors.New("unsupported stream event version")
 	}

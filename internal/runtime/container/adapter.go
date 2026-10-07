@@ -35,9 +35,13 @@ func (a *Adapter) List(ctx context.Context) ([]Resource, error) {
 	}
 
 	stats := map[string]Resource{}
+	identity := "{{.Container}}"
+	if a.runtime == bhruntime.Podman {
+		identity = "{{.ContainerID}}"
+	}
 	if result, err := a.runner.Run(ctx, nil, command,
 		"stats", "--no-stream", "--format",
-		"{{.Container}}\t{{.CPUPerc}}\t{{.MemUsage}}\t{{.NetIO}}",
+		identity+"\t{{.CPUPerc}}\t{{.MemUsage}}\t{{.NetIO}}",
 	); err == nil {
 		for _, line := range strings.Split(strings.TrimSpace(result.Stdout), "\n") {
 			parts := strings.Split(line, "\t")

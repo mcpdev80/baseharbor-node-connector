@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 )
 
@@ -19,6 +20,9 @@ func InstallEnrollment(files TLSFiles, response EnrollmentResponse, now time.Tim
 	cert, err := firstCertificate([]byte(response.CertificatePEM))
 	if err != nil {
 		return fmt.Errorf("parse enrollment certificate: %w", err)
+	}
+	if cert.IsCA || cert.KeyUsage != x509.KeyUsageDigitalSignature || len(cert.ExtKeyUsage) != 1 || cert.ExtKeyUsage[0] != x509.ExtKeyUsageClientAuth || len(cert.UnknownExtKeyUsage) != 0 || len(cert.URIs) != 1 || cert.URIs[0].String() != response.Node.Identity || len(cert.DNSNames) != 0 || len(cert.IPAddresses) != 0 || len(cert.EmailAddresses) != 0 {
+		return errors.New("enrolled certificate is not a scoped client-only node identity")
 	}
 	if err := verifyPeerIdentity(cert, response.Node.Identity); err != nil {
 		return fmt.Errorf("verify enrolled node identity: %w", err)
@@ -36,13 +40,13 @@ func InstallEnrollment(files TLSFiles, response EnrollmentResponse, now time.Tim
 	}
 	if _, err := cert.Verify(x509.VerifyOptions{
 		Roots:       roots,
-		KeyUsages:   []x509.ExtKeyUsage{x509.ExtKeyUsageAny},
+		KeyUsages:   []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth},
 		CurrentTime: verifyTime,
 	}); err != nil {
 		return fmt.Errorf("verify enrollment certificate chain: %w", err)
 	}
-	if response.NotAfter.After(cert.NotAfter) {
-		return errors.New("enrollment response expiry exceeds certificate validity")
+	if !response.NotAfter.Equal(cert.NotAfter) {
+		return errors.New("enrollment response expiry differs from certificate validity")
 	}
 	if err := atomicWriteFile(files.CertificateFile, []byte(response.CertificatePEM), 0o600); err != nil {
 		return fmt.Errorf("install enrollment certificate: %w", err)
@@ -58,8 +62,8 @@ func certificateMatchesPrivateKey(cert *x509.Certificate, privateKeyPath string)
 	if err != nil {
 		return fmt.Errorf("read private key: %w", err)
 	}
-	block, _ := pem.Decode(data)
-	if block == nil {
+	block, rest := pem.Decode(data)
+	if block == nil || len(block.Headers) != 0 || strings.TrimSpace(string(rest)) != "" || !strings.HasPrefix(strings.TrimSpace(string(data)), "-----BEGIN ") {
 		return errors.New("private key file contains no PEM block")
 	}
 	key, err := parsePrivateKey(block.Bytes)
@@ -98,8 +102,8 @@ func parsePrivateKey(data []byte) (any, error) {
 }
 
 func firstCertificate(data []byte) (*x509.Certificate, error) {
-	block, _ := pem.Decode(data)
-	if block == nil || block.Type != "CERTIFICATE" {
+	block, rest := pem.Decode(data)
+	if block == nil || block.Type != "CERTIFICATE" || len(block.Headers) != 0 || strings.TrimSpace(string(rest)) != "" || !strings.HasPrefix(strings.TrimSpace(string(data)), "-----BEGIN CERTIFICATE-----") {
 		return nil, errors.New("certificate PEM contains no certificate")
 	}
 	return x509.ParseCertificate(block.Bytes)
@@ -107,23 +111,19 @@ func firstCertificate(data []byte) (*x509.Certificate, error) {
 
 func parseCertPool(data []byte) (*x509.CertPool, error) {
 	pool := x509.NewCertPool()
-	rest := data
 	count := 0
-	for {
-		block, next := pem.Decode(rest)
-		if block == nil {
-			break
-		}
-		rest = next
-		if block.Type != "CERTIFICATE" {
-			continue
+	for len(bytes.TrimSpace(data)) > 0 {
+		block, rest := pem.Decode(data)
+		if block == nil || block.Type != "CERTIFICATE" || len(block.Headers) != 0 || !strings.HasPrefix(strings.TrimSpace(string(data)), "-----BEGIN CERTIFICATE-----") {
+			return nil, errors.New("trust bundle contains invalid PEM material")
 		}
 		cert, err := x509.ParseCertificate(block.Bytes)
-		if err != nil {
-			return nil, err
+		if err != nil || !cert.IsCA {
+			return nil, errors.New("trust bundle contains an invalid CA certificate")
 		}
 		pool.AddCert(cert)
 		count++
+		data = rest
 	}
 	if count == 0 {
 		return nil, errors.New("trust bundle contains no certificates")

@@ -1,0 +1,7 @@
+{
+  "schema": "baseharbor.contract-source/v1",
+  "repository": "mcpdev80/baseharbor",
+  "commit": "6ab378bbff51cfbefecb9633a08f440cf4372ade",
+  "schema_sha256": "f6d4b7de6d8ba129faf9664857f80bd93873e59aeea577fc36de64f94039cedc",
+  "golden_sha256": "30b0eaa2d37c56e8e2add4403f8cd0f630df9d898120201c8b49fe472fd5ab27"
+}

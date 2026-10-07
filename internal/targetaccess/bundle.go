@@ -1,6 +1,7 @@
 package targetaccess
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
@@ -34,7 +35,7 @@ type StagedFile struct {
 	SHA256 string `json:"sha256"`
 }
 
-func StageBundle(root *fssecure.Root, bundle Bundle) (StagedBundle, error) {
+func StageBundle(ctx context.Context, root *fssecure.Root, bundle Bundle) (StagedBundle, error) {
 	if root == nil {
 		return StagedBundle{}, errors.New("staging root is required")
 	}
@@ -48,6 +49,7 @@ func StageBundle(root *fssecure.Root, bundle Bundle) (StagedBundle, error) {
 
 	result := StagedBundle{BundleID: bundleID}
 	seen := map[string]struct{}{}
+	files := make([]fssecure.BundleFile, 0, len(bundle.Files))
 	for _, file := range bundle.Files {
 		rawPath := strings.TrimSpace(file.Path)
 		if rawPath == "" || filepath.IsAbs(rawPath) {
@@ -73,16 +75,15 @@ func StageBundle(root *fssecure.Root, bundle Bundle) (StagedBundle, error) {
 		if mode == 0 {
 			mode = 0o600
 		}
-		stagedPath := filepath.Join("bundles", bundleID, path)
-		written, err := root.WriteFile(stagedPath, file.Data, fs.FileMode(mode&0o700))
-		if err != nil {
-			return StagedBundle{}, fmt.Errorf("stage %q: %w", path, err)
-		}
-		rel, err := filepath.Rel(root.Path(), written)
-		if err != nil {
-			return StagedBundle{}, err
-		}
-		result.Files = append(result.Files, StagedFile{Path: rel, SHA256: actual})
+		files = append(files, fssecure.BundleFile{Path: path, Data: file.Data, Mode: fs.FileMode(mode)})
+		result.Files = append(result.Files, StagedFile{Path: path, SHA256: actual})
+	}
+	directory, err := root.PublishBundle(ctx, bundleID, files)
+	if err != nil {
+		return StagedBundle{}, err
+	}
+	for i := range result.Files {
+		result.Files[i].Path = filepath.Join(directory, result.Files[i].Path)
 	}
 	return result, nil
 }

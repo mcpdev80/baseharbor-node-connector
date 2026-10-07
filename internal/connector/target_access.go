@@ -3,6 +3,7 @@ package connector
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -15,10 +16,11 @@ import (
 )
 
 type TargetAccess struct {
-	service  *Service
-	identity targetaccess.NodeIdentity
-	health   *health.Collector
-	streams  *streamReplayRegistry
+	service    *Service
+	identity   targetaccess.NodeIdentity
+	health     *health.Collector
+	streams    *streamReplayRegistry
+	admissions *targetaccess.AdmissionJournal
 }
 
 func (s *Service) TargetAccess(identity targetaccess.NodeIdentity) (*TargetAccess, error) {
@@ -28,29 +30,50 @@ func (s *Service) TargetAccess(identity targetaccess.NodeIdentity) (*TargetAcces
 	if err := identity.Validate(); err != nil {
 		return nil, err
 	}
+	if identity.Identity != "spiffe://baseharbor/platform/connectors/"+identity.TenantID+"/"+identity.TargetID+"/"+identity.NodeID {
+		return nil, targetaccess.ErrTargetAccessWire
+	}
 	if identity.Runtime != string(s.Runtime.Kind) {
 		return nil, fmt.Errorf("node identity runtime %q does not match detected runtime %q", identity.Runtime, s.Runtime.Kind)
 	}
+	var journal *targetaccess.AdmissionJournal
+	if s.TransportStateRoot != "" {
+		var err error
+		journal, err = targetaccess.NewAdmissionJournal(s.TransportStateRoot, identity)
+		if err != nil {
+			return nil, err
+		}
+	}
 	return &TargetAccess{
-		service:  s,
-		identity: identity,
-		health:   health.NewCollector(s.Runtime.Kind),
-		streams:  newStreamReplayRegistry(defaultStreamReplayEvents),
+		admissions: journal,
+		service:    s,
+		identity:   identity,
+		health:     health.NewCollector(s.Runtime.Kind),
+		streams:    newStreamReplayRegistry(defaultStreamReplayEvents),
 	}, nil
 }
 
 func (a *TargetAccess) Capabilities() targetaccess.CapabilitySet {
+	descriptors := append([]capability.Descriptor(nil), a.service.Capabilities...)
+	if a.admissions == nil {
+		for i := range descriptors {
+			if targetaccess.RequiresAdmission(targetaccess.Operation(descriptors[i].Name)) {
+				descriptors[i].Available = false
+				descriptors[i].Detail = "Persistent transport admission is unavailable."
+			}
+		}
+	}
 	return targetaccess.CapabilitySet{
 		ContractVersion: targetaccess.ContractVersion,
 		ProtocolVersion: targetaccess.ProtocolVersion,
 		Node:            a.identity,
-		Capabilities:    append([]capability.Descriptor(nil), a.service.Capabilities...),
+		Capabilities:    descriptors,
 	}
 }
 
 func (a *TargetAccess) Execute(ctx context.Context, request targetaccess.Request) targetaccess.Response {
 	if err := request.Validate(time.Now().UTC()); err != nil {
-		return targetaccess.FailureResponse(request, "invalid_request", err.Error(), false)
+		return targetaccess.FailureResponse(request, "invalid_request", "Invalid or expired typed request.", false)
 	}
 	if request.TargetID != a.identity.TargetID {
 		return targetaccess.FailureResponse(request, "target_mismatch", "request target does not match connector target identity", false)
@@ -59,18 +82,39 @@ func (a *TargetAccess) Execute(ctx context.Context, request targetaccess.Request
 		return targetaccess.FailureResponse(request, "capability_unavailable", "requested operation is not available on this connector", false)
 	}
 
-	result, err := a.execute(ctx, request.Operation, request.Payload)
+	requestCtx, cancel := context.WithDeadline(ctx, request.DeadlineAt)
+	defer cancel()
+	if targetaccess.RequiresAdmission(request.Operation) {
+		err := a.admissions.Admit(requestCtx, request)
+		if err != nil {
+			code := "capability_unavailable"
+			message := "Persistent transport admission failed."
+			if errors.Is(err, targetaccess.ErrReplayConflict) {
+				code = "replay_conflict"
+				message = "Request identifier content conflicts with durable admission."
+			}
+			if errors.Is(err, targetaccess.ErrReplayAmbiguous) {
+				code = "replay_ambiguous"
+				message = "Request was already admitted; reconcile observed state before a new operation."
+			}
+			return targetaccess.FailureResponse(request, code, message, false)
+		}
+	}
+	result, err := a.execute(requestCtx, request.Operation, request.Payload)
 	if err != nil {
-		return targetaccess.FailureResponse(request, "operation_failed", err.Error(), false)
+		return targetaccess.FailureResponse(request, "operation_failed", "The bounded runtime operation failed.", false)
 	}
 	raw, err := json.Marshal(result)
 	if err != nil {
-		return targetaccess.FailureResponse(request, "encode_result_failed", err.Error(), false)
+		return targetaccess.FailureResponse(request, "encode_result_failed", "The runtime result could not be encoded.", false)
 	}
 	return targetaccess.SuccessResponse(request, raw)
 }
 
 func (a *TargetAccess) operationAvailable(operation targetaccess.Operation) bool {
+	if targetaccess.RequiresAdmission(operation) && a.admissions == nil {
+		return false
+	}
 	name := capability.Name(operation)
 	for _, descriptor := range a.service.Capabilities {
 		if descriptor.Name == name {
@@ -157,6 +201,9 @@ func (a *TargetAccess) execute(ctx context.Context, operation targetaccess.Opera
 		if err := decodePayload(payload, &request); err != nil {
 			return nil, err
 		}
+		if request.ProjectDirectory != "" {
+			return nil, a.service.Quadlet.ApplyPublished(ctx, a.service.Staging, request.ProjectDirectory, request.Name, request.Content, request.Enable)
+		}
 		return nil, a.service.Quadlet.Apply(ctx, request.Name, request.Content, request.Enable)
 	case targetaccess.OpQuadletRemove:
 		var request targetaccess.QuadletNameRequest
@@ -223,7 +270,7 @@ func (a *TargetAccess) execute(ctx context.Context, operation targetaccess.Opera
 		if err := decodePayload(payload, &request); err != nil {
 			return nil, err
 		}
-		return targetaccess.StageBundle(a.service.Staging, request)
+		return targetaccess.StageBundle(ctx, a.service.Staging, request)
 	default:
 		return nil, fmt.Errorf("unsupported target-access operation %q", operation)
 	}
@@ -247,4 +294,11 @@ func decodePayload(payload json.RawMessage, target any) error {
 		return fmt.Errorf("decode target-access payload: %w", err)
 	}
 	return nil
+}
+
+func (a *TargetAccess) Close() error {
+	if a == nil || a.admissions == nil {
+		return nil
+	}
+	return a.admissions.Close()
 }
