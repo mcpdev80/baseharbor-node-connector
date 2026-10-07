@@ -116,7 +116,7 @@ Source checks are separate from exact-ref production/runtime qualification.
 
 The opt-in `runtime-validation/enrollment/**` push runs the separately built
 Connector against the exact public Core harness at
-`177bcfad6e7253a32d0791c0482091c8b1a1d8ea`, with actual OpenBao 2.7.0, isolated
+`d6af688f92df3bc639a813e4c7059f7d90829533`, with actual OpenBao 2.7.0, isolated
 PostgreSQL storage/admission and either Docker or rootless Podman. It exchanges
 a persisted one-use Core grant over verified HTTPS, opens outbound mTLS, retains
 the local node key during explicit renewal, verifies live CA overlap and old-root
@@ -172,3 +172,9 @@ actual retained containers: successful exit 0, failure exit 17, never-started,
 running and removed containers are distinguished. Native ownership labels and
 exit timestamps are checked over the authenticated Node session. This does not
 qualify Quadlet init realization or the complete Application lifecycle.
+
+The local Quadlet manager can observe a loaded unit only after matching its
+protected ownership receipt and exact published Core bundle content, including
+resolved Node file bindings. The loaded systemd SourcePath must match the owned
+unit. Bounded native exit/start timestamps distinguish evidence from mere
+inactivity. Transport exposure and native init-unit qualification remain pending.
