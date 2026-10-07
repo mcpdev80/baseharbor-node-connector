@@ -11,7 +11,7 @@ import (
 )
 
 func TestConcurrentPublicationPreservesOriginalAndForeignData(t *testing.T) {
-	dir := t.TempDir()
+	dir := filepath.Join(t.TempDir(), "staging")
 	var winners atomic.Int32
 	var workers sync.WaitGroup
 	for i := 0; i < 16; i++ {
@@ -71,7 +71,7 @@ func (c *interruptedContext) Err() error {
 }
 
 func TestInterruptedOrPartialBundleCannotBeConsumed(t *testing.T) {
-	dir := t.TempDir()
+	dir := filepath.Join(t.TempDir(), "staging")
 	root, err := OpenRoot(dir)
 	if err != nil {
 		t.Fatal(err)
@@ -102,7 +102,7 @@ func TestInterruptedOrPartialBundleCannotBeConsumed(t *testing.T) {
 }
 
 func TestPublishedBundleRejectsTamperAndCrossBundleMembers(t *testing.T) {
-	dir := t.TempDir()
+	dir := filepath.Join(t.TempDir(), "staging")
 	root, _ := OpenRoot(dir)
 	files := []BundleFile{{Path: "compose.yml", Data: []byte("original")}}
 	first, err := root.PublishBundle(context.Background(), "first", files)

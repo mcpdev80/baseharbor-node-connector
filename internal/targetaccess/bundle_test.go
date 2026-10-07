@@ -12,7 +12,7 @@ import (
 )
 
 func TestStageBundleWritesVerifiedFilesInsideStagingRoot(t *testing.T) {
-	root, err := fssecure.OpenRoot(t.TempDir())
+	root, err := fssecure.OpenRoot(filepath.Join(t.TempDir(), "staging"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -44,7 +44,7 @@ func TestStageBundleWritesVerifiedFilesInsideStagingRoot(t *testing.T) {
 }
 
 func TestStageBundleRejectsTraversalAndHashMismatch(t *testing.T) {
-	root, err := fssecure.OpenRoot(t.TempDir())
+	root, err := fssecure.OpenRoot(filepath.Join(t.TempDir(), "staging"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -65,7 +65,7 @@ func TestStageBundleRejectsTraversalAndHashMismatch(t *testing.T) {
 }
 
 func TestLaterHashMismatchPublishesNoEarlierValidFile(t *testing.T) {
-	root, err := fssecure.OpenRoot(t.TempDir())
+	root, err := fssecure.OpenRoot(filepath.Join(t.TempDir(), "staging"))
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -27,6 +27,7 @@ type bundleManifest struct {
 	ID        string            `json:"id"`
 	Directory string            `json:"directory"`
 	Files     map[string]string `json:"files"`
+	Modes     map[string]uint32 `json:"modes,omitempty"`
 }
 
 // PublishBundle commits a complete immutable object using a no-replace hard
@@ -39,7 +40,7 @@ func (r *Root) PublishBundle(ctx context.Context, id string, files []BundleFile)
 	if len(files) == 0 || len(files) > 128 {
 		return "", errors.New("invalid bundle file count")
 	}
-	manifest := bundleManifest{Version: 1, ID: id, Files: make(map[string]string)}
+	manifest := bundleManifest{Version: 2, ID: id, Files: make(map[string]string), Modes: make(map[string]uint32)}
 	total := 0
 	for _, file := range files {
 		clean, err := cleanRelative(file.Path)
@@ -55,17 +56,25 @@ func (r *Root) PublishBundle(ctx context.Context, id string, files []BundleFile)
 		}
 		sum := sha256.Sum256(file.Data)
 		manifest.Files[clean] = hex.EncodeToString(sum[:])
+		mode, err := bundleFileMode(file.Mode)
+		if err != nil {
+			return "", err
+		}
+		manifest.Modes[clean] = uint32(mode)
 	}
 	root, err := os.OpenRoot(r.path)
 	if err != nil {
 		return "", err
 	}
 	defer root.Close()
+	if err := protectedBundleDirectory(root, "."); err != nil {
+		return "", err
+	}
 	if err := root.MkdirAll("bundles", 0o700); err != nil {
 		return "", err
 	}
 	info, err := root.Lstat("bundles")
-	if err != nil || !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
+	if err != nil || !info.IsDir() || info.Mode()&os.ModeSymlink != 0 || info.Mode().Perm()&0077 != 0 {
 		return "", errors.New("invalid bundle storage directory")
 	}
 	storage, err := root.OpenRoot("bundles")
@@ -96,10 +105,7 @@ func (r *Root) PublishBundle(ctx context.Context, id string, files []BundleFile)
 		if err := storage.MkdirAll(filepath.Dir(name), 0o700); err != nil {
 			return "", err
 		}
-		mode := file.Mode & 0o700
-		if mode == 0 {
-			mode = 0o600
-		}
+		mode := os.FileMode(manifest.Modes[file.Path])
 		if err := writeNewBundleFile(storage, name, file.Data, mode); err != nil {
 			return "", err
 		}
@@ -140,6 +146,9 @@ func writeNewBundleFile(root *os.Root, name string, data []byte, mode os.FileMod
 		return err
 	}
 	defer file.Close()
+	if err := file.Chmod(mode); err != nil {
+		return err
+	}
 	if _, err := file.Write(data); err != nil {
 		return err
 	}
@@ -147,6 +156,26 @@ func writeNewBundleFile(root *os.Root, name string, data []byte, mode os.FileMod
 		return err
 	}
 	return file.Close()
+}
+
+func bundleFileMode(mode os.FileMode) (os.FileMode, error) {
+	if mode == 0 {
+		mode = 0600
+	}
+	// Readable bind files remain beneath owner-only directories. Writable or
+	// privileged modes are never accepted, including masked special bits.
+	if mode != 0600 && mode != 0644 && mode != 0700 {
+		return 0, errors.New("unsupported bundle file permissions")
+	}
+	return mode, nil
+}
+
+func protectedBundleDirectory(root *os.Root, name string) error {
+	info, err := root.Lstat(name)
+	if err != nil || !info.IsDir() || info.Mode()&os.ModeSymlink != 0 || info.Mode().Perm()&0077 != 0 {
+		return errors.New("bundle directory is not protected")
+	}
+	return nil
 }
 
 func syncBundleDirectories(root *os.Root, objectName string, files []BundleFile) error {
@@ -247,8 +276,16 @@ func (r *Root) VerifyPublishedBundle(directory string, members ...string) error 
 	var manifest bundleManifest
 	decoder := json.NewDecoder(bytes.NewReader(data))
 	decoder.DisallowUnknownFields()
-	if decoder.Decode(&manifest) != nil || decoder.Decode(new(any)) != io.EOF || manifest.Version != 1 || manifest.Directory != clean || validBundleID(manifest.ID) != nil || len(manifest.Files) == 0 || len(manifest.Files) > 128 {
+	if decoder.Decode(&manifest) != nil || decoder.Decode(new(any)) != io.EOF || (manifest.Version != 1 && manifest.Version != 2) || manifest.Directory != clean || validBundleID(manifest.ID) != nil || len(manifest.Files) == 0 || len(manifest.Files) > 128 {
 		return errors.New("invalid bundle manifest")
+	}
+	if (manifest.Version == 2 && len(manifest.Modes) != len(manifest.Files)) || (manifest.Version == 1 && len(manifest.Modes) != 0) {
+		return errors.New("bundle permission commitments differ")
+	}
+	for _, directory := range []string{".", "bundles", clean} {
+		if err := protectedBundleDirectory(root, directory); err != nil {
+			return err
+		}
 	}
 	commitName := filepath.Join("bundles", manifest.ID+".json")
 	info, err := root.Lstat(commitName)
@@ -264,9 +301,22 @@ func (r *Root) VerifyPublishedBundle(directory string, members ...string) error 
 			return errors.New("invalid bundle member")
 		}
 		name := filepath.Join(clean, path)
+		for directory := filepath.Dir(name); directory != clean; directory = filepath.Dir(directory) {
+			if err := protectedBundleDirectory(root, directory); err != nil {
+				return err
+			}
+		}
 		info, err := root.Lstat(name)
-		if err != nil || !info.Mode().IsRegular() {
-			return errors.New("bundle member is not a regular file")
+		if err != nil || !info.Mode().IsRegular() || info.Mode()&(os.ModeSetuid|os.ModeSetgid|os.ModeSticky) != 0 {
+			return errors.New("bundle member is not a regular protected file")
+		}
+		if manifest.Version == 2 {
+			mode, err := bundleFileMode(os.FileMode(manifest.Modes[path]))
+			if err != nil || manifest.Modes[path] == 0 || info.Mode().Perm() != mode {
+				return errors.New("bundle member permissions differ")
+			}
+		} else if info.Mode().Perm()&0077 != 0 {
+			return errors.New("legacy bundle member is not protected")
 		}
 		file, err := root.Open(name)
 		if err != nil {

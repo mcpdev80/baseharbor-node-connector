@@ -9,7 +9,7 @@ import (
 )
 
 func TestExistingAllowsRootAndChild(t *testing.T) {
-	rootDir := t.TempDir()
+	rootDir := filepath.Join(t.TempDir(), "staging")
 	root, err := OpenRoot(rootDir)
 	if err != nil {
 		t.Fatal(err)

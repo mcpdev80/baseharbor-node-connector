@@ -27,6 +27,10 @@ func OpenRoot(path string) (*Root, error) {
 	if err != nil {
 		return nil, fmt.Errorf("resolve staging root: %w", err)
 	}
+	info, err := os.Stat(resolved)
+	if err != nil || !info.IsDir() || info.Mode().Perm()&0077 != 0 {
+		return nil, fmt.Errorf("staging root must be a protected directory")
+	}
 	return &Root{path: resolved}, nil
 }
 

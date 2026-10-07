@@ -77,6 +77,18 @@ Compose accepts only a committed bundle directory and members from that same
 bundle. It rechecks every digest before invoking the engine. Returned paths are
 opaque artifact references; Core uses them rather than guessing a directory.
 
+New immutable publications also commit file permissions. Core-approved native
+bind files may be readable by their unprivileged container user while staging,
+object and parent directories remain owner-only. Runtime environments use 0600.
+Publication rejects unsupported writable or privileged modes, and execution
+rechecks protected ancestors and exact committed file modes. Existing version-1
+owner-only objects remain valid; loosening their permissions is rejected.
+
+The native Docker qualification now exercises Core-generated PostgreSQL TLS
+material, UID 70, TLS-verified SELECT 1, receipt restoration/repair and explicit
+owned volume reset. Podman SQL and the complete Core Application lifecycle are
+separate outstanding qualifications. This narrower proof is not release eligible.
+
 Quadlet realization receipts retain immutable content outside the generator's
 search paths. Existing unit/drop-in artifacts without a verified matching inode
 and digest are foreign and cannot be overwritten, stopped or removed. Generated
@@ -103,7 +115,7 @@ Source checks are separate from exact-ref production/runtime qualification.
 
 The opt-in `runtime-validation/enrollment/**` push runs the separately built
 Connector against the exact public Core harness at
-`d7fa96e28ca262b54f4453a5de7aa1eb2a5960fa`, with actual OpenBao 2.7.0, isolated
+`d02461d7e052e93f7738d5be472dfb032d4fb8c2`, with actual OpenBao 2.7.0, isolated
 PostgreSQL storage/admission and either Docker or rootless Podman. It exchanges
 a persisted one-use Core grant over verified HTTPS, opens outbound mTLS, retains
 the local node key during explicit renewal, verifies live CA overlap and old-root

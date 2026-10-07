@@ -9,7 +9,7 @@ import (
 )
 
 func TestResolveConsumesOnlyCommittedMembers(t *testing.T) {
-	root, err := fssecure.OpenRoot(t.TempDir())
+	root, err := fssecure.OpenRoot(filepath.Join(t.TempDir(), "staging"))
 	if err != nil {
 		t.Fatal(err)
 	}

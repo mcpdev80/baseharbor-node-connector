@@ -75,7 +75,7 @@ func StageBundle(ctx context.Context, root *fssecure.Root, bundle Bundle) (Stage
 		if mode == 0 {
 			mode = 0o600
 		}
-		files = append(files, fssecure.BundleFile{Path: path, Data: file.Data, Mode: fs.FileMode(mode & 0o700)})
+		files = append(files, fssecure.BundleFile{Path: path, Data: file.Data, Mode: fs.FileMode(mode)})
 		result.Files = append(result.Files, StagedFile{Path: path, SHA256: actual})
 	}
 	directory, err := root.PublishBundle(ctx, bundleID, files)
