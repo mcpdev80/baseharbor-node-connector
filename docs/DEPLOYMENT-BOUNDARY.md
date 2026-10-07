@@ -116,7 +116,7 @@ Source checks are separate from exact-ref production/runtime qualification.
 
 The opt-in `runtime-validation/enrollment/**` push runs the separately built
 Connector against the exact public Core harness at
-`cfe348c6803c1bdc2c008fd644d8dd053dbb3455`, with actual OpenBao 2.7.0, isolated
+`afeeb6693bc4ebd618b1de1aeee032c986461d57`, with actual OpenBao 2.7.0, isolated
 PostgreSQL storage/admission and either Docker or rootless Podman. It exchanges
 a persisted one-use Core grant over verified HTTPS, opens outbound mTLS, retains
 the local node key during explicit renewal, verifies live CA overlap and old-root
@@ -162,3 +162,5 @@ source needs its own native rerun; the earlier successful receipt does not
 approve a newer source or the full Application lifecycle.
 
 Ordinary Quadlet removal retains immutable realization history outside generator search paths. Reapply of the exact unchanged network/volume source can reuse this protected history only when the active artifact is absent and native project labels still match. Foreign active units, changed source, altered permission commitments and missing receipts remain denied. Native ownership inspection and unit realization share the manager's operation lock. The new destroy/reapply SQL qualification must pass before this slice is considered natively qualified; explicit Podman data reset and the full Application journey remain separate requirements.
+
+Application resource preflight requests fresh Linux node-memory evidence through `connector.health` on the exact authenticated Tenant/Target/Node/runtime scope. Runtime-info total memory is not treated as free capacity. Missing, stale, changed-runtime or inconsistent evidence fails closed; the Core host is not a fallback. This bounded resource proof does not qualify cluster quotas, VM/cgroup limits, or the complete Application lifecycle. Memory PSI remains unavailable in this projection and is reported as such. The new native run must qualify this source before its node-memory receipt flag is accepted.
