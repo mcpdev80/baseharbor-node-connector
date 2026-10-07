@@ -76,18 +76,20 @@ func TestNativePublishedCompletion(t *testing.T) {
 					if err != nil {
 						t.Fatal("native init evidence unavailable", err)
 					}
-					if observation.FinishedMicros != 0 {
+					settled := (observation.ActiveState == "inactive" && observation.SubState == "dead") || observation.ActiveState == "failed" || (observation.ActiveState == "active" && observation.SubState == "exited")
+					if observation.FinishedMicros != 0 && settled {
 						break
 					}
 					if time.Now().After(deadline) {
-						t.Fatal("native init did not finish")
+						t.Fatalf("native init did not settle: %+v", observation)
 					}
 					time.Sleep(100 * time.Millisecond)
 				}
 			}
 			err = manager.VerifyPublishedCompletion(ctx, root, directory, file, content)
 			if scenario == "success" && err != nil {
-				t.Fatal("current native success denied", err)
+				observation, probeErr := manager.ObservePublished(ctx, root, directory, file, content)
+				t.Fatalf("current native success denied: %v; observation=%+v; observation_error=%v", err, observation, probeErr)
 			}
 			if scenario != "success" && err == nil {
 				t.Fatal("failed or unstarted native unit accepted")
@@ -107,5 +109,7 @@ func TestNativePublishedCompletion(t *testing.T) {
 			}
 		})
 	}
-	t.Log("native rootless unit completion verified exact published source and current boot activation; successful exit 0 accepted, failure exit 17 and never-started denied, changed source cannot adopt old success; transport and full Application lifecycle not qualified")
+	if !t.Failed() {
+		t.Log("native rootless unit completion verified exact published source and current boot activation; successful exit 0 accepted, failure exit 17 and never-started denied, changed source cannot adopt old success; transport and full Application lifecycle not qualified")
+	}
 }
