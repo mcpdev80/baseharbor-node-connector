@@ -55,6 +55,7 @@ type ComposeApplyRequest struct {
 	EnvFile          string   `json:"env_file,omitempty"`
 	Build            bool     `json:"build,omitempty"`
 	ForceRecreate    bool     `json:"force_recreate,omitempty"`
+	Services         []string `json:"services,omitempty"`
 	RemoveOrphans    bool     `json:"remove_orphans,omitempty"`
 	TimeoutSeconds   int      `json:"timeout_seconds,omitempty"`
 }

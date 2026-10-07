@@ -28,17 +28,17 @@ jobs:
         uses: actions/checkout@v7.0.1
         with:
           repository: mcpdev80/baseharbor
-          ref: b38eae2ccdb2ab296d456c501ac7d19a50f9f356
+          ref: 3eda5b1dd6e56e9a92832bd76fb77dbb1530f453
           path: .core-contract-source
           persist-credentials: false
       - name: Verify canonical consumer source lock
         run: |
           set -euo pipefail
-          test "$(git -C .core-contract-source rev-parse HEAD)" = b38eae2ccdb2ab296d456c501ac7d19a50f9f356
+          test "$(git -C .core-contract-source rev-parse HEAD)" = 3eda5b1dd6e56e9a92832bd76fb77dbb1530f453
           cmp internal/targetaccess/canonical/wire.schema.json .core-contract-source/contracts/targetaccess/v1/wire.schema.json
           cmp internal/targetaccess/canonical/wire.golden.json .core-contract-source/contracts/targetaccess/v1/wire.golden.json
-          echo 'e251fad3fd65c4576f314c226913127449f185ea1d4601ab64a19161bde38943  internal/targetaccess/canonical/wire.schema.json' | sha256sum -c -
-          echo 'a5c6ff0ba7bdca7fac87dcf0d737623a4519bbff6f6c8c5d728a3741c5ac5ea6  internal/targetaccess/canonical/wire.golden.json' | sha256sum -c -
+          echo 'a4f3d09819819e1e3c954f2713108a127ed0147b25121e85197284403a01d80a  internal/targetaccess/canonical/wire.schema.json' | sha256sum -c -
+          echo 'a9eb1d1cdda74debb79860eb4e938df8046eed64ae1e9fd1f7281263c91dd48e  internal/targetaccess/canonical/wire.golden.json' | sha256sum -c -
       - name: Verify exact candidate source formatting
         shell: bash
         run: |
@@ -56,7 +56,7 @@ jobs:
         run: |
           python3 - <<'PY'
           import json, os, subprocess
-          result={'schema':'baseharbor.private-source-receipt/v1','repository':os.environ['GITHUB_REPOSITORY'],'commit':subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip(),'core_commit':'b38eae2ccdb2ab296d456c501ac7d19a50f9f356','wire_schema_sha256':'e251fad3fd65c4576f314c226913127449f185ea1d4601ab64a19161bde38943','source_result':'success','runtime_evidence':False,'release_eligible':False,'formatting_applied':bool(subprocess.check_output(['git','diff','--name-only','--','cmd','internal'],text=True).strip()),'run_id':os.environ['GITHUB_RUN_ID'],'run_attempt':os.environ['GITHUB_RUN_ATTEMPT']}
+          result={'schema':'baseharbor.private-source-receipt/v1','repository':os.environ['GITHUB_REPOSITORY'],'commit':subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip(),'core_commit':'3eda5b1dd6e56e9a92832bd76fb77dbb1530f453','wire_schema_sha256':'a4f3d09819819e1e3c954f2713108a127ed0147b25121e85197284403a01d80a','source_result':'success','runtime_evidence':False,'release_eligible':False,'formatting_applied':bool(subprocess.check_output(['git','diff','--name-only','--','cmd','internal'],text=True).strip()),'run_id':os.environ['GITHUB_RUN_ID'],'run_attempt':os.environ['GITHUB_RUN_ATTEMPT']}
           open('connector-source-receipt.json','w').write(json.dumps(result,indent=2)+'\n')
           PY
       - uses: actions/upload-artifact@v6
@@ -100,7 +100,7 @@ jobs:
         uses: actions/checkout@v7.0.1
         with:
           repository: mcpdev80/baseharbor
-          ref: b38eae2ccdb2ab296d456c501ac7d19a50f9f356
+          ref: 3eda5b1dd6e56e9a92832bd76fb77dbb1530f453
           path: .core-transport-source
           persist-credentials: false
       - name: Build exact private Connector and pin actual runtime fixture
@@ -121,7 +121,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          test "$(git rev-parse HEAD)" = b38eae2ccdb2ab296d456c501ac7d19a50f9f356
+          test "$(git rev-parse HEAD)" = 3eda5b1dd6e56e9a92832bd76fb77dbb1530f453
           go test -race ./internal/targetsession -run '^TestConnectorRuntimeTransport$' -count=1 -v | tee "$RUNNER_TEMP/transport.log"
       - name: Verify exact runtime fixture cleanup
         id: cleanup
@@ -137,7 +137,7 @@ jobs:
           python3 - <<'PY'
           import hashlib,json,os,pathlib,subprocess
           binary=pathlib.Path(os.environ.get('BASEHARBOR_TEST_CONNECTOR_BIN','/nonexistent'))
-          result={'schema':'baseharbor.private-transport-receipt/v1','repository':os.environ['GITHUB_REPOSITORY'],'commit':subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip(),'core_commit':'b38eae2ccdb2ab296d456c501ac7d19a50f9f356','connector_binary_sha256':hashlib.sha256(binary.read_bytes()).hexdigest() if binary.is_file() else None,'runtime':os.environ['BASEHARBOR_CONNECTOR_RUNTIME_KIND'],'runtime_image':os.environ.get('BASEHARBOR_CONNECTOR_RUNTIME_IMAGE'),'result':os.environ['TRANSPORT_RESULT'],'cleanup_result':os.environ['CLEANUP_RESULT'],'run_id':os.environ['GITHUB_RUN_ID'],'run_attempt':os.environ['GITHUB_RUN_ATTEMPT'],'test_authority':True,'scope':'encrypted immutable bundle/Compose or Quadlet apply-status-repair-destroy/foreign preservation/inventory/container lifecycle/exec/PTY/follow cancellation','release_eligible':False}
+          result={'schema':'baseharbor.private-transport-receipt/v1','repository':os.environ['GITHUB_REPOSITORY'],'commit':subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip(),'core_commit':'3eda5b1dd6e56e9a92832bd76fb77dbb1530f453','connector_binary_sha256':hashlib.sha256(binary.read_bytes()).hexdigest() if binary.is_file() else None,'runtime':os.environ['BASEHARBOR_CONNECTOR_RUNTIME_KIND'],'runtime_image':os.environ.get('BASEHARBOR_CONNECTOR_RUNTIME_IMAGE'),'result':os.environ['TRANSPORT_RESULT'],'cleanup_result':os.environ['CLEANUP_RESULT'],'run_id':os.environ['GITHUB_RUN_ID'],'run_attempt':os.environ['GITHUB_RUN_ATTEMPT'],'test_authority':True,'scope':'encrypted immutable bundle/Compose or Quadlet apply-status-repair-destroy/foreign preservation/inventory/container lifecycle/exec/PTY/follow cancellation','release_eligible':False}
           pathlib.Path('transport-receipt.json').write_text(json.dumps(result,indent=2)+'\n')
           PY
       - uses: actions/upload-artifact@v6
@@ -186,7 +186,7 @@ jobs:
         uses: actions/checkout@v7.0.1
         with:
           repository: mcpdev80/baseharbor
-          ref: b38eae2ccdb2ab296d456c501ac7d19a50f9f356
+          ref: 3eda5b1dd6e56e9a92832bd76fb77dbb1530f453
           path: .core-enrollment-source
           persist-credentials: false
       - name: Build exact private Connector and pin actual runtime fixture
@@ -249,7 +249,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          test "$(git rev-parse HEAD)" = b38eae2ccdb2ab296d456c501ac7d19a50f9f356
+          test "$(git rev-parse HEAD)" = 3eda5b1dd6e56e9a92832bd76fb77dbb1530f453
           go test -race ./internal/openbao -run '^TestNativeOpenBaoManagedCoreAndNodeCSRRotation$' -count=1 -v | tee "$RUNNER_TEMP/enrollment.log"
           python3 - <<'PY'
           import os,pathlib
@@ -260,6 +260,8 @@ jobs:
           assert 'managed generated SQL project preserved protected TLS material, native UID 70, verified TLS SELECT 1 and immutable repair; owned containers destroyed and foreign fixture preserved' in log, 'generated remote SQL was not qualified'
           assert 'protected deployment registry round-trip restored the same immutable SQL project without restaging' in log, 'durable generated SQL project was not qualified'
           assert 'fresh execution-node memory evidence obtained over exact enrolled scope; Core-host fallback not used' in log, 'authenticated node capacity evidence was not qualified'
+          if os.environ['BASEHARBOR_CONNECTOR_RUNTIME_KIND'] == 'docker':
+              assert 'actual enrolled Docker immutable project activated provider before workload and repaired workload without restarting provider' in log, 'selected application activation phases were not qualified'
           if os.environ['BASEHARBOR_CONNECTOR_RUNTIME_KIND'] == 'podman':
               assert 'ordinary generated SQL destroy/reapply reused the exact owned data volume and verified TLS SELECT 1' in log, 'retained Podman SQL provider reuse was not qualified'
               assert 'actual enrolled rootless Quadlet graph published both units before activation, started dependency before application' in log, 'dependency graph activation was not qualified'
@@ -283,7 +285,7 @@ jobs:
           python3 - <<'PY'
           import hashlib,json,os,pathlib,subprocess
           binary=pathlib.Path(os.environ.get('BASEHARBOR_TEST_CONNECTOR_BIN','/nonexistent'))
-          result={'schema':'baseharbor.private-managed-enrollment-receipt/v1','repository':os.environ['GITHUB_REPOSITORY'],'commit':subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip(),'core_commit':'b38eae2ccdb2ab296d456c501ac7d19a50f9f356','connector_binary_sha256':hashlib.sha256(binary.read_bytes()).hexdigest() if binary.is_file() else None,'runtime':os.environ['BASEHARBOR_CONNECTOR_RUNTIME_KIND'],'runtime_image':os.environ.get('BASEHARBOR_CONNECTOR_RUNTIME_IMAGE'),'result':os.environ['ENROLLMENT_RESULT'],'cleanup_result':os.environ['CLEANUP_RESULT'],'run_id':os.environ['GITHUB_RUN_ID'],'run_attempt':os.environ['GITHUB_RUN_ATTEMPT'],'test_authority':False,'production_issuer':True,'persisted_admission':True,'operator_oidc_authorization_evidence':os.environ['ENROLLMENT_RESULT']=='success' and os.environ['CLEANUP_RESULT']=='success','identity_image':os.environ.get('BASEHARBOR_CONNECTOR_IDENTITY_IMAGE'),'managed_provider_adapter_evidence':os.environ['ENROLLMENT_RESULT']=='success' and os.environ['CLEANUP_RESULT']=='success','managed_project_realization_evidence':os.environ['ENROLLMENT_RESULT']=='success' and os.environ['CLEANUP_RESULT']=='success','managed_sql_provider_evidence':os.environ['ENROLLMENT_RESULT']=='success' and os.environ['CLEANUP_RESULT']=='success','sql_image':os.environ.get('BASEHARBOR_CONNECTOR_SQL_IMAGE'),'durable_project_registry_evidence':os.environ['ENROLLMENT_RESULT']=='success' and os.environ['CLEANUP_RESULT']=='success','podman_retained_provider_reuse_evidence':os.environ['BASEHARBOR_CONNECTOR_RUNTIME_KIND']=='podman' and os.environ['ENROLLMENT_RESULT']=='success' and os.environ['CLEANUP_RESULT']=='success','node_memory_evidence':os.environ['ENROLLMENT_RESULT']=='success' and os.environ['CLEANUP_RESULT']=='success','native_init_completion_evidence':os.environ['ENROLLMENT_RESULT']=='success' and os.environ['CLEANUP_RESULT']=='success','quadlet_unit_completion_evidence':os.environ['BASEHARBOR_CONNECTOR_RUNTIME_KIND']=='podman' and os.environ['UNIT_COMPLETION_RESULT']=='success' and os.environ['CLEANUP_RESULT']=='success','quadlet_authenticated_completion_evidence':os.environ['BASEHARBOR_CONNECTOR_RUNTIME_KIND']=='podman' and os.environ['ENROLLMENT_RESULT']=='success' and os.environ['CLEANUP_RESULT']=='success','podman_owned_data_reset_evidence':os.environ['BASEHARBOR_CONNECTOR_RUNTIME_KIND']=='podman' and os.environ['ENROLLMENT_RESULT']=='success' and os.environ['CLEANUP_RESULT']=='success','quadlet_managed_start_evidence':os.environ['BASEHARBOR_CONNECTOR_RUNTIME_KIND']=='podman' and os.environ['ENROLLMENT_RESULT']=='success' and os.environ['CLEANUP_RESULT']=='success','quadlet_init_graph_evidence':os.environ['BASEHARBOR_CONNECTOR_RUNTIME_KIND']=='podman' and os.environ['ENROLLMENT_RESULT']=='success' and os.environ['CLEANUP_RESULT']=='success','application_lifecycle_evidence':False,'scope':'actual Keycloak operator OIDC/protected initial and renewal grants/denials/OpenBao/PostgreSQL CSR exchange/outbound mTLS/local-key renewal/CA overlap and retirement/persisted revocation/Core-bound immutable project apply-repair-destroy/foreign preservation/native inventory and bounded exec','release_eligible':False}
+          result={'schema':'baseharbor.private-managed-enrollment-receipt/v1','repository':os.environ['GITHUB_REPOSITORY'],'commit':subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip(),'core_commit':'3eda5b1dd6e56e9a92832bd76fb77dbb1530f453','connector_binary_sha256':hashlib.sha256(binary.read_bytes()).hexdigest() if binary.is_file() else None,'runtime':os.environ['BASEHARBOR_CONNECTOR_RUNTIME_KIND'],'runtime_image':os.environ.get('BASEHARBOR_CONNECTOR_RUNTIME_IMAGE'),'result':os.environ['ENROLLMENT_RESULT'],'cleanup_result':os.environ['CLEANUP_RESULT'],'run_id':os.environ['GITHUB_RUN_ID'],'run_attempt':os.environ['GITHUB_RUN_ATTEMPT'],'test_authority':False,'production_issuer':True,'persisted_admission':True,'operator_oidc_authorization_evidence':os.environ['ENROLLMENT_RESULT']=='success' and os.environ['CLEANUP_RESULT']=='success','identity_image':os.environ.get('BASEHARBOR_CONNECTOR_IDENTITY_IMAGE'),'managed_provider_adapter_evidence':os.environ['ENROLLMENT_RESULT']=='success' and os.environ['CLEANUP_RESULT']=='success','managed_project_realization_evidence':os.environ['ENROLLMENT_RESULT']=='success' and os.environ['CLEANUP_RESULT']=='success','managed_sql_provider_evidence':os.environ['ENROLLMENT_RESULT']=='success' and os.environ['CLEANUP_RESULT']=='success','sql_image':os.environ.get('BASEHARBOR_CONNECTOR_SQL_IMAGE'),'durable_project_registry_evidence':os.environ['ENROLLMENT_RESULT']=='success' and os.environ['CLEANUP_RESULT']=='success','podman_retained_provider_reuse_evidence':os.environ['BASEHARBOR_CONNECTOR_RUNTIME_KIND']=='podman' and os.environ['ENROLLMENT_RESULT']=='success' and os.environ['CLEANUP_RESULT']=='success','node_memory_evidence':os.environ['ENROLLMENT_RESULT']=='success' and os.environ['CLEANUP_RESULT']=='success','native_init_completion_evidence':os.environ['ENROLLMENT_RESULT']=='success' and os.environ['CLEANUP_RESULT']=='success','quadlet_unit_completion_evidence':os.environ['BASEHARBOR_CONNECTOR_RUNTIME_KIND']=='podman' and os.environ['UNIT_COMPLETION_RESULT']=='success' and os.environ['CLEANUP_RESULT']=='success','quadlet_authenticated_completion_evidence':os.environ['BASEHARBOR_CONNECTOR_RUNTIME_KIND']=='podman' and os.environ['ENROLLMENT_RESULT']=='success' and os.environ['CLEANUP_RESULT']=='success','podman_owned_data_reset_evidence':os.environ['BASEHARBOR_CONNECTOR_RUNTIME_KIND']=='podman' and os.environ['ENROLLMENT_RESULT']=='success' and os.environ['CLEANUP_RESULT']=='success','quadlet_managed_start_evidence':os.environ['BASEHARBOR_CONNECTOR_RUNTIME_KIND']=='podman' and os.environ['ENROLLMENT_RESULT']=='success' and os.environ['CLEANUP_RESULT']=='success','quadlet_init_graph_evidence':os.environ['BASEHARBOR_CONNECTOR_RUNTIME_KIND']=='podman' and os.environ['ENROLLMENT_RESULT']=='success' and os.environ['CLEANUP_RESULT']=='success','application_lifecycle_evidence':False,'scope':'actual Keycloak operator OIDC/protected initial and renewal grants/denials/OpenBao/PostgreSQL CSR exchange/outbound mTLS/local-key renewal/CA overlap and retirement/persisted revocation/Core-bound immutable project apply-repair-destroy/foreign preservation/native inventory and bounded exec','release_eligible':False}
           pathlib.Path('enrollment-receipt.json').write_text(json.dumps(result,indent=2)+'\n')
           PY
       - uses: actions/upload-artifact@v6

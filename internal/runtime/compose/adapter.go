@@ -18,6 +18,7 @@ type ApplyRequest struct {
 	EnvFile          string   `json:"env_file,omitempty"`
 	Build            bool     `json:"build,omitempty"`
 	ForceRecreate    bool     `json:"force_recreate,omitempty"`
+	Services         []string `json:"services,omitempty"`
 	RemoveOrphans    bool     `json:"remove_orphans,omitempty"`
 	TimeoutSeconds   int      `json:"timeout_seconds,omitempty"`
 }
@@ -64,7 +65,15 @@ func (a *Adapter) Apply(ctx context.Context, req ApplyRequest) (Result, error) {
 	if envFile != "" {
 		args = append(args, "--env-file", envFile)
 	}
+	if req.Services != nil {
+		if err := a.verifyPhase(ctx, req, command, args); err != nil {
+			return Result{}, err
+		}
+	}
 	args = append(args, "up", "-d")
+	if req.Services != nil {
+		args = append(args, "--no-deps", "--no-build")
+	}
 	if req.Build {
 		args = append(args, "--build")
 	}
@@ -74,6 +83,7 @@ func (a *Adapter) Apply(ctx context.Context, req ApplyRequest) (Result, error) {
 	if req.RemoveOrphans {
 		args = append(args, "--remove-orphans")
 	}
+	args = append(args, req.Services...)
 	return a.run(ctx, req.TimeoutSeconds, command, args...)
 }
 

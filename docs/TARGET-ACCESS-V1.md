@@ -352,3 +352,14 @@ stops another workload; successful native absence is checked after removal.
 Foreign, changed, unbound or active resources fail closed. An already absent
 volume still requires the exact protected realization proof. Ordinary unit
 removal retains data; release qualification requires the actual native reset test.
+
+## Core-selected Compose phases
+
+A nonempty unique `services` list limits `runtime.compose.apply` to one explicit
+Core-selected activation phase. The node checks service syntax and effective
+declarations using read-only `compose config --services`, then activates only
+those services with `--no-deps --no-build`. Build and orphan-removal flags are
+rejected for selected phases. Ordinary apply without a service list is unchanged.
+Core must verify prerequisites before advancing to a workload phase; repair must
+not restart an unselected provider. Complete Application integration remains a
+separate release requirement.
