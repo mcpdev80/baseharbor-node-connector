@@ -149,6 +149,18 @@ func (m *Manager) Remove(ctx context.Context, name string) error {
 	if err := m.verifyOwned(activation); err != nil {
 		return err
 	}
+	content, err := os.ReadFile(path)
+	if err != nil {
+		return err
+	}
+	// Managed project units have both protected realization receipts and
+	// explicit native ownership labels. Recheck the latter before stopping:
+	// an old unit receipt cannot authorize a subsequently replaced resource.
+	if strings.Contains(string(content), "Label=com.docker.compose.project=") {
+		if err := m.checkPublishedNativeOwnership(ctx, name, string(content)); err != nil {
+			return err
+		}
+	}
 	if _, err := m.runner.Run(ctx, nil, "systemctl", "--user", "stop", unit); err != nil {
 		return err
 	}
