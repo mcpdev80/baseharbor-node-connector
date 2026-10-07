@@ -177,6 +177,11 @@ func (m *Manager) Remove(ctx context.Context, name string) error {
 	if _, err := m.runner.Run(ctx, nil, "systemctl", "--user", "stop", unit); err != nil {
 		return err
 	}
+	if filepath.Ext(name) == ".network" && strings.Contains(string(content), "Label=com.docker.compose.project=") {
+		if err := m.removeOwnedNetwork(ctx, name, string(content)); err != nil {
+			return err
+		}
+	}
 	if err := os.Remove(path); err != nil {
 		return err
 	}

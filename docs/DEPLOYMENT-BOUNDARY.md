@@ -193,3 +193,5 @@ cleans the current receipt while retained immutable ownership history stays
 outside generator search paths. The focused native manager test must qualify
 this source independently; the completion observation is still not exposed over
 Target Access, and the full Core Application lifecycle remains unqualified.
+
+Managed network-unit removal stops the exact owned unit, rechecks its live native project labels and removes only that named network without force. Quadlet stop alone normally retains networks. A network with live consumers is preserved, and the protected unit remains available for an explicit retry. Volumes remain retained until a separate explicit owned data reset. Successful removal verifies native network absence before deleting the unit source.
