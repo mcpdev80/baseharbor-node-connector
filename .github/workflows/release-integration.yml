@@ -1,0 +1,365 @@
+name: "Release Integration \xB7 Connector"
+'on':
+  push:
+    branches:
+    - release-integration/v0.4.23/core/**
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: connector-release-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  resolve:
+    runs-on: ubuntu-latest
+    outputs:
+      core: ${{ steps.core.outputs.core }}
+      demo: ${{ steps.demo.outputs.demo }}
+    steps:
+    - uses: actions/checkout@v7.0.1
+      with:
+        ref: ${{ github.sha }}
+        persist-credentials: false
+    - name: Resolve exact Core from trusted push branch
+      id: core
+      shell: bash
+      run: 'set -euo pipefail
+
+        candidate="${GITHUB_REF_NAME#release-integration/v0.4.23/core/}"
+
+        [[ "$GITHUB_REF_NAME" == release-integration/v0.4.23/core/* && "$candidate" =~ ^[0-9a-f]{40}$ ]]
+
+        echo "core=$candidate" >> "$GITHUB_OUTPUT"
+
+        '
+    - uses: actions/checkout@v7.0.1
+      with:
+        repository: mcpdev80/baseharbor
+        ref: ${{ steps.core.outputs.core }}
+        path: .release-core-source
+        persist-credentials: false
+    - name: Resolve candidate-owned Demo
+      id: demo
+      shell: bash
+      run: 'set -euo pipefail
+
+        demo="$(cat .release-core-source/docs/releases/v0.4.23.demo-ref)"
+
+        [[ "$demo" =~ ^[0-9a-f]{40}$ ]]
+
+        echo "demo=$demo" >> "$GITHUB_OUTPUT"
+
+        '
+  qualification:
+    name: "Integration \xB7 ${{ matrix.gate }}"
+    runs-on: ${{ matrix.runtime == 'podman' && 'ubuntu-26.04' || 'ubuntu-latest' }}
+    timeout-minutes: 60
+    env:
+      BASEHARBOR_API_DATABASE_URL: postgres://postgres:isolated-browser-password@127.0.0.1:35432/baseharbor_browser?sslmode=disable
+      BASEHARBOR_BROWSER_CORE_COMMIT: ${{ needs.resolve.outputs.core }}
+      BASEHARBOR_BROWSER_CORE_SOURCE: ${{ github.workspace }}/.browser-console-source/.browser-core-source
+      NEXT_PUBLIC_BASEHARBOR_API_URL: https://localhost:8443
+      NEXT_PUBLIC_BASEHARBOR_OIDC_ISSUER: https://localhost:8443/realms/baseharbor-browser
+      NEXT_PUBLIC_BASEHARBOR_OIDC_CLIENT_ID: baseharbor-console-browser
+      BASEHARBOR_BROWSER_REMOTE_RUNTIME: ${{ matrix.runtime }}
+      BASEHARBOR_BROWSER_DEMO_COMMIT: ${{ needs.resolve.outputs.demo }}
+      BASEHARBOR_CONNECTOR_RUNTIME_KIND: ${{ matrix.runtime }}
+      BASEHARBOR_NATIVE_CONNECTOR_ENROLLMENT: '1'
+      BASEHARBOR_TEST_NATIVE_OPENBAO: '1'
+      BASEHARBOR_TEST_OPENBAO_STORAGE_URL: postgres://baseharbor_fixture:fixture-native-pki-only@127.0.0.1:5432/baseharbor_native_pki_fixture?sslmode=disable
+      RELEASE_GATE: ${{ matrix.gate }}
+    services:
+      postgres:
+        image: postgres:18-alpine
+        env:
+          POSTGRES_DB: baseharbor_browser
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: isolated-browser-password
+        ports:
+        - 35432:5432
+        options: --health-cmd "pg_isready -U postgres -d baseharbor_browser" --health-interval 5s --health-timeout 3s --health-retries
+          20
+    steps:
+    - name: Checkout exact Connector
+      uses: actions/checkout@v7.0.1
+      with:
+        ref: ${{ github.sha }}
+        persist-credentials: false
+    - name: Checkout exact normal Console qualification harness
+      uses: actions/checkout@v7.0.1
+      with:
+        repository: mcpdev80/baseharbor-console
+        ref: 21374effe3e896c50029426c8193457db63be501
+        path: .browser-console-source
+        persist-credentials: false
+    - name: Bind isolated fixture directory
+      run: echo "BASEHARBOR_BROWSER_FIXTURE=$RUNNER_TEMP/baseharbor-browser" >> "$GITHUB_ENV"
+    - uses: actions/checkout@v7.0.1
+      with:
+        repository: mcpdev80/baseharbor
+        ref: ${{ needs.resolve.outputs.core }}
+        path: .browser-console-source/.browser-core-source
+        persist-credentials: false
+    - name: Checkout exact reference Demo
+      uses: actions/checkout@v7.0.1
+      with:
+        repository: mcpdev80/baseharbor-demo
+        ref: ${{ needs.resolve.outputs.demo }}
+        path: .browser-console-source/.release-demo-source
+        persist-credentials: false
+    - uses: actions/setup-go@v7
+      with:
+        go-version: 1.26.2
+        cache: false
+    - uses: actions/setup-node@v6
+      with:
+        node-version: 24.14.0
+    - name: Install exact consumer dependencies
+      run: npm ci --no-audit --no-fund
+    - name: Check browser candidate source and fixture syntax
+      run: 'npm run check
+
+        node --check scripts/browser/prepare-realm.mjs
+
+        node --check scripts/browser/https-proxy.mjs
+
+        node --check scripts/browser/live-browser.mjs
+
+        node --check scripts/browser/application-journey.mjs
+
+        bash -n scripts/browser/start-fixture.sh
+
+        bash -n scripts/browser/stop-fixture.sh
+
+        bash -n scripts/browser/start-terminal-fixture.sh
+
+        '
+    - name: Build Console with the actual HTTPS authority
+      run: npm run build
+    - name: Install pinned browser runner
+      run: 'npm install --no-save --package-lock=false --no-audit --no-fund playwright@1.62.1
+
+        npx playwright install --with-deps chromium
+
+        '
+    - name: Prepare verified rootless Docker
+      env:
+        BASEHARBOR_TEST_RUNTIME: docker
+      run: bash .browser-core-source/scripts/ci-core-rootless-runtime.sh
+    - name: Prepare rootless Podman
+      if: matrix.runtime == 'podman'
+      run: 'sudo apt-get update
+
+        sudo apt-get install -y podman
+
+        uid="$(id -u)"
+
+        sudo loginctl enable-linger "$(id -un)"
+
+        sudo systemctl start "user@$uid.service"
+
+        echo "XDG_RUNTIME_DIR=/run/user/$uid" >> "$GITHUB_ENV"
+
+        echo "DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/$uid/bus" >> "$GITHUB_ENV"
+
+        XDG_RUNTIME_DIR="/run/user/$uid" DBUS_SESSION_BUS_ADDRESS="unix:path=/run/user/$uid/bus" systemctl --user show-environment
+        >/dev/null
+
+        test "$(podman info --format ''{{.Host.Security.Rootless}}'')" = true
+
+        '
+    - name: Build exact Core runtime and warm its declared provider images
+      shell: bash
+      run: 'set -euo pipefail
+
+        image="localhost/baseharbor-runtime:browser-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+
+        docker build -f .browser-core-source/deploy/control-plane/Dockerfile -t "$image" .browser-core-source
+
+        echo "BASEHARBOR_RUNTIME_IMAGE=$image" >> "$GITHUB_ENV"
+
+        awk ''/^[[:space:]]+image:/ {print $2}'' .browser-core-source/internal/runtime/assets/compose-single.yaml | sort -u
+        | while read -r provider; do docker pull "$provider"; done
+
+        '
+    - name: Pin the repository's native Keycloak image
+      shell: bash
+      run: 'set -euo pipefail
+
+        grep -F ''KeycloakImage      = "quay.io/keycloak/keycloak:26.8.0"'' .browser-core-source/internal/identityprovider/keycloak_files.go
+
+        docker pull quay.io/keycloak/keycloak:26.8.0
+
+        image="$(docker image inspect quay.io/keycloak/keycloak:26.8.0 --format ''{{index .RepoDigests 0}}'')"
+
+        [[ "$image" == *@sha256:* ]]
+
+        echo "BASEHARBOR_BROWSER_KEYCLOAK_IMAGE=$image" >> "$GITHUB_ENV"
+
+        '
+    - name: Build exact Connector and pin remote workload
+      shell: bash
+      run: 'set -euo pipefail
+
+        binary="$RUNNER_TEMP/baseharbor-node-connector"
+
+        (cd "$GITHUB_WORKSPACE"; go build -trimpath -o "$binary" ./cmd/baseharbor-node-connector)
+
+        echo "BASEHARBOR_TEST_CONNECTOR_BIN=$binary" >> "$GITHUB_ENV"
+
+        "$BASEHARBOR_CONNECTOR_RUNTIME_KIND" pull docker.io/library/alpine:3.23
+
+        image="$("$BASEHARBOR_CONNECTOR_RUNTIME_KIND" image inspect docker.io/library/alpine:3.23 --format ''{{index .RepoDigests
+        0}}'')"
+
+        [[ "$image" == *@sha256:* ]]
+
+        echo "BASEHARBOR_CONNECTOR_RUNTIME_IMAGE=$image" >> "$GITHUB_ENV"
+
+        '
+    - name: Prepare generated SQL native provider
+      shell: bash
+      run: 'set -euo pipefail
+
+        "$BASEHARBOR_CONNECTOR_RUNTIME_KIND" pull docker.io/library/postgres:18-alpine
+
+        image="$("$BASEHARBOR_CONNECTOR_RUNTIME_KIND" image inspect docker.io/library/postgres:18-alpine --format ''{{index
+        .RepoDigests 0}}'')"
+
+        [[ "$image" == *@sha256:* ]]
+
+        echo "BASEHARBOR_CONNECTOR_SQL_IMAGE=$image" >> "$GITHUB_ENV"
+
+        '
+    - name: Pin actual reference Identity for operator authorization
+      shell: bash
+      run: 'set -euo pipefail
+
+        identity="$(awk ''/KeycloakImage[[:space:]]*=/ {gsub(/"/,"",$3);print $3}'' .browser-core-source/internal/identityprovider/keycloak_files.go)"
+
+        [[ "$identity" == quay.io/keycloak/keycloak:* ]]
+
+        "$BASEHARBOR_CONNECTOR_RUNTIME_KIND" pull "$identity"
+
+        image="$("$BASEHARBOR_CONNECTOR_RUNTIME_KIND" image inspect "$identity" --format ''{{index .RepoDigests 0}}'')"
+
+        [[ "$image" == quay.io/keycloak/keycloak@sha256:* ]]
+
+        echo "BASEHARBOR_CONNECTOR_IDENTITY_IMAGE=$image" >> "$GITHUB_ENV"
+
+        '
+    - name: Prepare actual isolated OpenBao and PostgreSQL authority
+      shell: bash
+      run: 'set -euo pipefail
+
+        sudo apt-get update
+
+        sudo apt-get install -y postgresql
+
+        sudo systemctl start postgresql
+
+        sudo -u postgres psql -v ON_ERROR_STOP=1 -c "CREATE ROLE baseharbor_fixture LOGIN PASSWORD ''fixture-native-pki-only'';"
+
+        sudo -u postgres createdb --owner=baseharbor_fixture baseharbor_native_pki_fixture
+
+        echo ''127.0.0.1 openbao-member-1'' | sudo tee -a /etc/hosts >/dev/null
+
+        mkdir -p "$RUNNER_TEMP/native-bao-bin"
+
+        curl --fail --location --retry 3 https://github.com/openbao/openbao/releases/download/v2.7.0/openbao_2.7.0_linux_amd64.tar.gz
+        -o "$RUNNER_TEMP/openbao.tar.gz"
+
+        echo "c3ab5de9e778223445487ccbfb16c291bf491642b688f3a3df5aeba23d9b3667  $RUNNER_TEMP/openbao.tar.gz" | sha256sum -c
+        -
+
+        tar -xzf "$RUNNER_TEMP/openbao.tar.gz" -C "$RUNNER_TEMP/native-bao-bin"
+
+        echo "$RUNNER_TEMP/native-bao-bin" >> "$GITHUB_PATH"
+
+        '
+    - name: Exercise production managed enrollment with actual outbound Connector
+      id: native
+      working-directory: .browser-console-source/.browser-core-source
+      shell: bash
+      run: "set -euo pipefail\ntest \"$(git rev-parse HEAD)\" = $BASEHARBOR_BROWSER_CORE_COMMIT\ngo test -race ./internal/openbao\
+        \ -run '^TestNativeOpenBaoManagedCoreAndNodeCSRRotation$' -count=1 -v | tee \"$RUNNER_TEMP/enrollment.log\"\npython3\
+        \ - <<'PY'\nimport os,pathlib\nlog=pathlib.Path(os.environ['RUNNER_TEMP'],'enrollment.log').read_text()\nassert 'actual\
+        \ Keycloak operator authorization/denials, Connector managed enrollment' in log, 'actual operator enrollment proof\
+        \ was not completed'\nassert 'managed Core project staging, apply, observed running state, repair and destroy preserved\
+        \ foreign fixture' in log, 'managed Core project realization was not completed'\nassert 'actual enrolled Core-managed\
+        \ provider snapshot publish-restore-apply-repair-destroy preserved immutable TLS source' in log, 'scoped managed provider\
+        \ adapter was not qualified'\nassert 'managed generated SQL project preserved protected TLS material, native UID 70,\
+        \ verified TLS SELECT 1 and immutable repair; owned containers destroyed and foreign fixture preserved' in log, 'generated\
+        \ remote SQL was not qualified'\nassert 'protected deployment registry round-trip restored the same immutable SQL\
+        \ project without restaging' in log, 'durable generated SQL project was not qualified'\nassert 'private Core publication\
+        \ snapshot restored SQL repair and owned teardown after original Core source changed; exact registry receipt retained;\
+        \ full Application engine not qualified' in log, 'private immutable publication restoration was not qualified'\nassert\
+        \ 'fresh execution-node memory evidence obtained over exact enrolled scope; Core-host fallback not used' in log, 'authenticated\
+        \ node capacity evidence was not qualified'\nassert 'actual enrolled remote Application engine published provider\
+        \ and prebuilt repository workload together, verified TLS SQL before workload activation, detected lost workload,\
+        \ restored immutable source for repair without restarting provider, verified status and owned reset/cleanup with foreign\
+        \ preservation; complete operator HTTP and Console journey not qualified' in log, 'remote Application engine was not\
+        \ qualified'\nif os.environ['BASEHARBOR_CONNECTOR_RUNTIME_KIND'] == 'docker':\n    assert 'actual enrolled Docker\
+        \ immutable project activated provider before workload and repaired workload without restarting provider' in log,\
+        \ 'selected application activation phases were not qualified'\nif os.environ['BASEHARBOR_CONNECTOR_RUNTIME_KIND']\
+        \ == 'podman':\n    assert 'ordinary generated SQL destroy/reapply reused the exact owned data volume and verified\
+        \ TLS SELECT 1' in log, 'retained Podman SQL provider reuse was not qualified'\n    assert 'actual enrolled rootless\
+        \ Quadlet graph published both units before activation, started dependency before application' in log, 'dependency\
+        \ graph activation was not qualified'\n    assert 'actual enrolled rootless Quadlet completion verified current source\
+        \ over mTLS, restored exact commitment, denied changed, failed, unstarted and removed units' in log, 'authenticated\
+        \ source-bound completion was not qualified'\n    assert 'actual enrolled Podman explicit owned SQL data reset removed\
+        \ exact provider volume, verified absence and reconciled retry without starting containers' in log, 'owned Podman\
+        \ data reset was not qualified'\n    assert 'actual enrolled rootless Core-managed init graph has no default-target\
+        \ automatic activation' in log, 'Core managed activation was not qualified'\n    assert 'actual enrolled rootless\
+        \ generated init graph verified exact completion before dependent activation, refused failed init without activating\
+        \ application, did not rerun successful init' in log, 'generated init dependency sequencing was not qualified'\nPY\n"
+    - name: Verify exact runtime fixture cleanup
+      id: native_cleanup
+      run: test -z "$("$BASEHARBOR_CONNECTOR_RUNTIME_KIND" ps -aq --filter label=baseharbor.enrollment-qualification=true)"
+    - name: Start native Core and real issuer
+      run: bash scripts/browser/start-fixture.sh
+    - name: Start built Console
+      shell: bash
+      run: "set -euo pipefail\nnpm run start -- --hostname 127.0.0.1 --port 13000 > \"$BASEHARBOR_BROWSER_FIXTURE/next.log\"\
+        \ 2>&1 &\necho \"$!\" > \"$BASEHARBOR_BROWSER_FIXTURE/next.pid\"\nready=false\nfor attempt in $(seq 1 60); do\n  if\
+        \ curl --silent --fail http://127.0.0.1:13000/applications >/dev/null; then ready=true; break; fi\n  sleep 1\ndone\n\
+        $ready\n"
+    - name: Run actual Chromium login and live-read checks
+      run: node scripts/browser/live-browser.mjs
+    - name: Stop owned test services and remove generated private keys
+      if: always()
+      run: bash scripts/browser/stop-fixture.sh
+    - uses: actions/upload-artifact@v6
+      if: always()
+      with:
+        name: actual-browser-core-read-receipt
+        path: ${{ runner.temp }}/baseharbor-browser/browser-receipt.json
+        if-no-files-found: warn
+        retention-days: 90
+    - name: Authenticate complete source-bound consumer release evidence
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: python3 "$GITHUB_WORKSPACE/scripts/release-integration-receipt.py"
+    - uses: actions/upload-artifact@v6
+      with:
+        name: private-integration-${{ matrix.artifact }}-${{ github.run_id }}-${{ github.run_attempt }}
+        path: ${{ runner.temp }}/baseharbor-browser/manifest.json
+        if-no-files-found: error
+        retention-days: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+        - runtime: docker
+          gate: integration/docker/remote-target
+          artifact: integration-docker-remote-target
+        - runtime: podman
+          gate: integration/podman/remote-target
+          artifact: integration-podman-remote-target
+        - runtime: docker
+          gate: integration/static/live-console
+          artifact: integration-static-live-console
+    defaults:
+      run:
+        working-directory: .browser-console-source
+    needs: resolve
