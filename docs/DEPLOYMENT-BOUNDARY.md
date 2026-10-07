@@ -86,8 +86,9 @@ owner-only objects remain valid; loosening their permissions is rejected.
 
 The native Docker qualification now exercises Core-generated PostgreSQL TLS
 material, UID 70, TLS-verified SELECT 1, receipt restoration/repair and explicit
-owned volume reset. Podman SQL and the complete Core Application lifecycle are
-separate outstanding qualifications. This narrower proof is not release eligible.
+owned volume reset. Rootless Podman now passes generated SQL as described below;
+its explicit data reset and the complete Core Application lifecycle remain
+outstanding. This narrower proof is not release eligible.
 
 Quadlet realization receipts retain immutable content outside the generator's
 search paths. Existing unit/drop-in artifacts without a verified matching inode
@@ -115,7 +116,7 @@ Source checks are separate from exact-ref production/runtime qualification.
 
 The opt-in `runtime-validation/enrollment/**` push runs the separately built
 Connector against the exact public Core harness at
-`49e0ef0c4dbc3c9eedac198f238d116f051496e2`, with actual OpenBao 2.7.0, isolated
+`f85bd6c1de5a1385e1aec91144b7d031221a3ee5`, with actual OpenBao 2.7.0, isolated
 PostgreSQL storage/admission and either Docker or rootless Podman. It exchanges
 a persisted one-use Core grant over verified HTTPS, opens outbound mTLS, retains
 the local node key during explicit renewal, verifies live CA overlap and old-root
@@ -129,8 +130,10 @@ protected HTTP handler. Missing, expired, wrong-audience and viewer tokens, and
 a foreign Target selection, must be denied before grant creation. Password
 grant is confined to disposable test accounts; the product login flow is unchanged.
 
-This expanded native qualification is pending. Earlier successful receipts used
-direct grant creation and remain explicitly outside the operator proof. The
+The expanded native qualification passed on both Docker and rootless Podman in
+run `37586292164` against Core `49e0ef0c4dbc3c9eedac198f238d116f051496e2`
+and Connector `4f806267c8982585d3e6cb3f2d7dd8182e687b06`. Earlier receipts using
+direct grant creation remain outside the operator proof. The
 receipt still excludes the Core-authoritative Application lifecycle and release
 approval. A successful test must not be promoted to the full remote-target gate.
 
@@ -141,4 +144,19 @@ repair, destroy and foreign-resource preservation. This realizes already
 authorized project decisions; the complete Core Application planning, provider
 placement and secret binding journey remains a separate required release proof.
 
-Published Quadlet apply can bind its exact content to an immutable staging publication. Read-only TLS binds and owner-only environment files resolve only on the selected Node; Core host paths and build inputs are not transferred. Native name collisions require protected realization ownership and matching runtime labels. The Core graph adapter publishes resource definitions before containers and removes containers before definitions, preserving provider data. Actual generated SQL graph qualification on Podman is pending; this primitive still does not qualify the full Application engine or make a release-eligible receipt.
+Published Quadlet apply can bind its exact content to an immutable staging
+publication. Read-only TLS binds and owner-only environment files resolve only
+on the selected Node; Core host paths and build inputs are not transferred.
+Native name collisions require protected realization ownership and matching
+runtime labels. The Core graph adapter publishes resource definitions before
+containers and removes containers before definitions, preserving provider data.
+Actual generated SQL graphs passed on Docker and rootless Podman in the run
+above, including native UID 70, TLS SELECT 1 and immutable repair. Ordinary
+Podman destroy preserved owned provider data; explicit Podman reset remains
+unqualified. This primitive does not qualify the full Application engine or
+make a release-eligible receipt.
+
+The newer pinned Core adds protected durable deployment-project commitments and
+preserves them through pending/applied/observed transitions. This subsequent
+source needs its own native rerun; the earlier successful receipt does not
+approve a newer source or the full Application lifecycle.
