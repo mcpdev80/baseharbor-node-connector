@@ -116,7 +116,7 @@ Source checks are separate from exact-ref production/runtime qualification.
 
 The opt-in `runtime-validation/enrollment/**` push runs the separately built
 Connector against the exact public Core harness at
-`e0734515a3454caac8875f331bae804d9aa64d47`, with actual OpenBao 2.7.0, isolated
+`177bcfad6e7253a32d0791c0482091c8b1a1d8ea`, with actual OpenBao 2.7.0, isolated
 PostgreSQL storage/admission and either Docker or rootless Podman. It exchanges
 a persisted one-use Core grant over verified HTTPS, opens outbound mTLS, retains
 the local node key during explicit renewal, verifies live CA overlap and old-root
@@ -166,3 +166,9 @@ Ordinary Quadlet removal retains immutable realization history outside generator
 Application resource preflight requests fresh Linux node-memory evidence through `connector.health` on the exact authenticated Tenant/Target/Node/runtime scope. Runtime-info total memory is not treated as free capacity. Missing, stale, changed-runtime or inconsistent evidence fails closed; the Core host is not a fallback. This bounded resource proof does not qualify cluster quotas, VM/cgroup limits, or the complete Application lifecycle. Memory PSI remains unavailable in this projection and is reported as such. The new native run must qualify this source before its node-memory receipt flag is accepted.
 
 Managed project-unit removal independently rechecks live native ownership before stopping the generated service or deleting its protected unit. A retained own unit receipt cannot authorize a container, network or volume that has since been replaced with foreign project labels. Rejected removal preserves both the native resource and the protected unit. Ordinary data retention and explicit data-reset qualification remain distinct.
+
+The enrolled native harness also verifies Core completion observations against
+actual retained containers: successful exit 0, failure exit 17, never-started,
+running and removed containers are distinguished. Native ownership labels and
+exit timestamps are checked over the authenticated Node session. This does not
+qualify Quadlet init realization or the complete Application lifecycle.
