@@ -2,6 +2,8 @@ package connector
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -205,6 +207,20 @@ func (a *TargetAccess) execute(ctx context.Context, operation targetaccess.Opera
 			return nil, a.service.Quadlet.ApplyPublished(ctx, a.service.Staging, request.ProjectDirectory, request.Name, request.Content, request.Enable)
 		}
 		return nil, a.service.Quadlet.Apply(ctx, request.Name, request.Content, request.Enable)
+	case targetaccess.OpQuadletCompletion:
+		var request targetaccess.QuadletCompletionRequest
+		if err := decodePayload(payload, &request); err != nil {
+			return nil, err
+		}
+		if a.service.Quadlet == nil || a.service.Staging == nil {
+			return nil, errors.New("published completion verification is unavailable")
+		}
+		if err := a.service.Quadlet.VerifyPublishedCompletion(ctx, a.service.Staging, request.ProjectDirectory, request.Name, request.Content); err != nil {
+			return nil, err
+		}
+		digest := sha256.Sum256([]byte(request.Content))
+		return targetaccess.QuadletCompletionResult{Name: request.Name, ProjectDirectory: request.ProjectDirectory,
+			ContentSHA256: hex.EncodeToString(digest[:]), Completed: true}, nil
 	case targetaccess.OpQuadletRemove:
 		var request targetaccess.QuadletNameRequest
 		if err := decodePayload(payload, &request); err != nil {

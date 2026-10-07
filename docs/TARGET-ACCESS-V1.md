@@ -313,3 +313,24 @@ endpoint or remote lifecycle integration.
 Canonical acquisition and bootstrap JSON/tenant requirements follow the
 [pinned Core wire boundary](../README.md#pinned-core-wire-and-bootstrap-binding).
 Source checks are separate from exact-ref production/runtime qualification.
+
+## Source-bound Quadlet completion observation
+
+`runtime.quadlet.verify-completion` is an authenticated, read-only capability for
+Linux Podman with a live user systemd manager. Its payload requires `name`
+(a `.container` unit), the exact unresolved `content`, and `project_directory`
+(an immutable `bundles/.object-<hex>` publication). It cannot select host paths,
+start units or supply an `enable` flag. Normal peer, Target and capability checks
+apply; the observation does not admit or replay a mutation.
+
+The Node verifies the published bundle, current unit and native resource ownership,
+resolved source digest, protected activation receipt and current Linux boot.
+Native successful process exit must follow that source's recorded activation
+and have settled unit state. Failed, unstarted, altered, removed and stale units
+fail closed. An absent container alone is never successful completion evidence.
+
+Success returns `name`, `project_directory`, `content_sha256` (SHA-256 of the
+unresolved request content) and `completed: true`. Core revalidates all four
+fields against its scoped immutable project before accepting the observation.
+This primitive does not itself qualify the complete remote Application lifecycle
+or authorize enabling unqualified completion-dependency realization.

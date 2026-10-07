@@ -279,7 +279,7 @@ func (j *AdmissionJournal) admit(ctx context.Context, id string, value any) erro
 // side effects. Read-only observations may be repeated through new requests.
 func RequiresAdmission(operation Operation) bool {
 	switch operation {
-	case OpRuntimeDetect, OpResourceList, OpResourceInspect, OpImageList, OpVolumeList, OpNetworkList, OpLogRead, OpMetrics, OpHealth, OpCapabilities:
+	case OpRuntimeDetect, OpResourceList, OpResourceInspect, OpImageList, OpVolumeList, OpNetworkList, OpLogRead, OpMetrics, OpHealth, OpCapabilities, OpQuadletCompletion:
 		return false
 	default:
 		return true

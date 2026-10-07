@@ -78,3 +78,18 @@ type QuadletApplyRequest struct {
 type QuadletNameRequest struct {
 	Name string `json:"name"`
 }
+
+// QuadletCompletionRequest can only select a container in an immutable bundle.
+// Completion verification observes the source-bound execution; it never starts it.
+type QuadletCompletionRequest struct {
+	Name             string `json:"name"`
+	Content          string `json:"content"`
+	ProjectDirectory string `json:"project_directory"`
+}
+
+type QuadletCompletionResult struct {
+	Name             string `json:"name"`
+	ProjectDirectory string `json:"project_directory"`
+	ContentSHA256    string `json:"content_sha256"`
+	Completed        bool   `json:"completed"`
+}

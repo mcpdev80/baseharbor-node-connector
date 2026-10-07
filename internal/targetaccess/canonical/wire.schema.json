@@ -112,7 +112,8 @@
             "runtime.metrics",
             "connector.health",
             "connector.capabilities",
-            "artifact.bundle.stage"
+            "artifact.bundle.stage",
+            "runtime.quadlet.verify-completion"
           ]
         },
         "available": {
@@ -1259,7 +1260,8 @@
             "runtime.metrics",
             "connector.health",
             "connector.capabilities",
-            "artifact.bundle.stage"
+            "artifact.bundle.stage",
+            "runtime.quadlet.verify-completion"
           ]
         },
         "issued_at": {
@@ -1602,8 +1604,45 @@
           "required": [
             "payload"
           ]
+        },
+        {
+          "properties": {
+            "operation": {
+              "const": "runtime.quadlet.verify-completion"
+            },
+            "payload": {
+              "$ref": "#/$defs/quadlet_completion"
+            }
+          },
+          "required": [
+            "payload"
+          ]
         }
       ]
+    },
+    "quadlet_completion": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "content",
+        "project_directory"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,63}\\.container$"
+        },
+        "content": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 262144
+        },
+        "project_directory": {
+          "type": "string",
+          "pattern": "^bundles/\\.object-[0-9a-f]{32}$"
+        }
+      }
     }
   }
 }
