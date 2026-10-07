@@ -58,7 +58,7 @@ func Open(ctx context.Context, cfg Config) (*Service, error) {
 	if detection.Kind == runtime.Podman && !quadletManager.Available(ctx) {
 		for i := range capabilities {
 			switch capabilities[i].Name {
-			case capability.QuadletApply, capability.QuadletRemove, capability.QuadletEnable, capability.QuadletDisable, capability.QuadletCompletion:
+			case capability.QuadletApply, capability.QuadletRemove, capability.QuadletEnable, capability.QuadletDisable, capability.QuadletCompletion, capability.QuadletVolumeReset:
 				capabilities[i].Available = false
 				capabilities[i].Detail = "A reachable systemd user manager is required"
 			}

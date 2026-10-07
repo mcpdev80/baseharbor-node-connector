@@ -258,5 +258,23 @@
         "autostart": false
       }
     }
+  },
+  {
+    "record": "request",
+    "wire": {
+      "contract_version": "baseharbor.target-access/v1",
+      "protocol_version": "1",
+      "request_id": "request-quadlet-volume-reset",
+      "correlation_id": "execution-fixture-a",
+      "target_id": "lab",
+      "operation": "runtime.quadlet.reset-volume",
+      "issued_at": "2026-10-06T02:00:00Z",
+      "deadline_at": "2026-10-06T02:05:00Z",
+      "payload": {
+        "name": "owned.volume",
+        "content": "[Volume]\nVolumeName=owned-data\nLabel=com.docker.compose.project=owned\n",
+        "project_directory": "bundles/.object-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      }
+    }
   }
 ]

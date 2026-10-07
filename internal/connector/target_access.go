@@ -213,6 +213,15 @@ func (a *TargetAccess) execute(ctx context.Context, operation targetaccess.Opera
 			return nil, a.service.Quadlet.ApplyPublished(ctx, a.service.Staging, request.ProjectDirectory, request.Name, request.Content, request.Enable)
 		}
 		return nil, a.service.Quadlet.Apply(ctx, request.Name, request.Content, request.Enable)
+	case targetaccess.OpQuadletVolumeReset:
+		var request targetaccess.QuadletVolumeResetRequest
+		if err := decodePayload(payload, &request); err != nil {
+			return nil, err
+		}
+		if a.service.Quadlet == nil || a.service.Staging == nil {
+			return nil, errors.New("published volume reset is unavailable")
+		}
+		return nil, a.service.Quadlet.ResetPublishedVolume(ctx, a.service.Staging, request.ProjectDirectory, request.Name, request.Content)
 	case targetaccess.OpQuadletCompletion:
 		var request targetaccess.QuadletCompletionRequest
 		if err := decodePayload(payload, &request); err != nil {

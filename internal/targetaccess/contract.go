@@ -71,34 +71,35 @@ func (c CapabilitySet) Validate() error {
 type Operation string
 
 const (
-	OpRuntimeDetect     Operation = "runtime.detect"
-	OpResourceList      Operation = "runtime.resource.list"
-	OpResourceInspect   Operation = "runtime.resource.inspect"
-	OpImageList         Operation = "runtime.image.list"
-	OpImagePull         Operation = "runtime.image.pull"
-	OpVolumeList        Operation = "runtime.volume.list"
-	OpVolumeEnsure      Operation = "runtime.volume.ensure"
-	OpVolumeRemove      Operation = "runtime.volume.remove"
-	OpNetworkList       Operation = "runtime.network.list"
-	OpNetworkEnsure     Operation = "runtime.network.ensure"
-	OpNetworkRemove     Operation = "runtime.network.remove"
-	OpContainerStart    Operation = "runtime.container.start"
-	OpContainerStop     Operation = "runtime.container.stop"
-	OpContainerRestart  Operation = "runtime.container.restart"
-	OpContainerRemove   Operation = "runtime.container.remove"
-	OpComposeApply      Operation = "runtime.compose.apply"
-	OpComposeDestroy    Operation = "runtime.compose.destroy"
-	OpQuadletApply      Operation = "runtime.quadlet.apply"
-	OpQuadletRemove     Operation = "runtime.quadlet.remove"
-	OpQuadletEnable     Operation = "runtime.quadlet.enable"
-	OpQuadletDisable    Operation = "runtime.quadlet.disable"
-	OpQuadletCompletion Operation = "runtime.quadlet.verify-completion"
-	OpLogRead           Operation = "runtime.logs.read"
-	OpExec              Operation = "runtime.exec"
-	OpMetrics           Operation = "runtime.metrics"
-	OpHealth            Operation = "connector.health"
-	OpCapabilities      Operation = "connector.capabilities"
-	OpBundleStage       Operation = "artifact.bundle.stage"
+	OpRuntimeDetect      Operation = "runtime.detect"
+	OpResourceList       Operation = "runtime.resource.list"
+	OpResourceInspect    Operation = "runtime.resource.inspect"
+	OpImageList          Operation = "runtime.image.list"
+	OpImagePull          Operation = "runtime.image.pull"
+	OpVolumeList         Operation = "runtime.volume.list"
+	OpVolumeEnsure       Operation = "runtime.volume.ensure"
+	OpVolumeRemove       Operation = "runtime.volume.remove"
+	OpNetworkList        Operation = "runtime.network.list"
+	OpNetworkEnsure      Operation = "runtime.network.ensure"
+	OpNetworkRemove      Operation = "runtime.network.remove"
+	OpContainerStart     Operation = "runtime.container.start"
+	OpContainerStop      Operation = "runtime.container.stop"
+	OpContainerRestart   Operation = "runtime.container.restart"
+	OpContainerRemove    Operation = "runtime.container.remove"
+	OpComposeApply       Operation = "runtime.compose.apply"
+	OpComposeDestroy     Operation = "runtime.compose.destroy"
+	OpQuadletApply       Operation = "runtime.quadlet.apply"
+	OpQuadletRemove      Operation = "runtime.quadlet.remove"
+	OpQuadletEnable      Operation = "runtime.quadlet.enable"
+	OpQuadletDisable     Operation = "runtime.quadlet.disable"
+	OpQuadletVolumeReset Operation = "runtime.quadlet.reset-volume"
+	OpQuadletCompletion  Operation = "runtime.quadlet.verify-completion"
+	OpLogRead            Operation = "runtime.logs.read"
+	OpExec               Operation = "runtime.exec"
+	OpMetrics            Operation = "runtime.metrics"
+	OpHealth             Operation = "connector.health"
+	OpCapabilities       Operation = "connector.capabilities"
+	OpBundleStage        Operation = "artifact.bundle.stage"
 )
 
 var allowedOperations = map[Operation]struct{}{
@@ -106,7 +107,7 @@ var allowedOperations = map[Operation]struct{}{
 	OpImageList: {}, OpImagePull: {}, OpVolumeList: {}, OpVolumeEnsure: {}, OpVolumeRemove: {},
 	OpNetworkList: {}, OpNetworkEnsure: {}, OpNetworkRemove: {}, OpContainerStart: {}, OpContainerStop: {},
 	OpContainerRestart: {}, OpContainerRemove: {}, OpComposeApply: {}, OpComposeDestroy: {},
-	OpQuadletApply: {}, OpQuadletRemove: {}, OpQuadletEnable: {}, OpQuadletDisable: {}, OpQuadletCompletion: {},
+	OpQuadletApply: {}, OpQuadletRemove: {}, OpQuadletEnable: {}, OpQuadletDisable: {}, OpQuadletCompletion: {}, OpQuadletVolumeReset: {},
 	OpLogRead: {}, OpExec: {}, OpMetrics: {}, OpHealth: {}, OpCapabilities: {}, OpBundleStage: {},
 }
 

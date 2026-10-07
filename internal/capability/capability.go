@@ -3,35 +3,36 @@ package capability
 type Name string
 
 const (
-	RuntimeDetect     Name = "runtime.detect"
-	ResourceList      Name = "runtime.resource.list"
-	ResourceInspect   Name = "runtime.resource.inspect"
-	ImageList         Name = "runtime.image.list"
-	ImagePull         Name = "runtime.image.pull"
-	VolumeList        Name = "runtime.volume.list"
-	VolumeEnsure      Name = "runtime.volume.ensure"
-	VolumeRemove      Name = "runtime.volume.remove"
-	NetworkList       Name = "runtime.network.list"
-	NetworkEnsure     Name = "runtime.network.ensure"
-	NetworkRemove     Name = "runtime.network.remove"
-	ContainerStart    Name = "runtime.container.start"
-	ContainerStop     Name = "runtime.container.stop"
-	ContainerRestart  Name = "runtime.container.restart"
-	ContainerRemove   Name = "runtime.container.remove"
-	ComposeApply      Name = "runtime.compose.apply"
-	ComposeDestroy    Name = "runtime.compose.destroy"
-	QuadletApply      Name = "runtime.quadlet.apply"
-	QuadletRemove     Name = "runtime.quadlet.remove"
-	QuadletEnable     Name = "runtime.quadlet.enable"
-	QuadletDisable    Name = "runtime.quadlet.disable"
-	QuadletCompletion Name = "runtime.quadlet.verify-completion"
-	LogRead           Name = "runtime.logs.read"
-	Exec              Name = "runtime.exec"
-	Terminal          Name = "runtime.terminal"
-	Metrics           Name = "runtime.metrics"
-	Health            Name = "connector.health"
-	Capabilities      Name = "connector.capabilities"
-	BundleStage       Name = "artifact.bundle.stage"
+	RuntimeDetect      Name = "runtime.detect"
+	ResourceList       Name = "runtime.resource.list"
+	ResourceInspect    Name = "runtime.resource.inspect"
+	ImageList          Name = "runtime.image.list"
+	ImagePull          Name = "runtime.image.pull"
+	VolumeList         Name = "runtime.volume.list"
+	VolumeEnsure       Name = "runtime.volume.ensure"
+	VolumeRemove       Name = "runtime.volume.remove"
+	NetworkList        Name = "runtime.network.list"
+	NetworkEnsure      Name = "runtime.network.ensure"
+	NetworkRemove      Name = "runtime.network.remove"
+	ContainerStart     Name = "runtime.container.start"
+	ContainerStop      Name = "runtime.container.stop"
+	ContainerRestart   Name = "runtime.container.restart"
+	ContainerRemove    Name = "runtime.container.remove"
+	ComposeApply       Name = "runtime.compose.apply"
+	ComposeDestroy     Name = "runtime.compose.destroy"
+	QuadletApply       Name = "runtime.quadlet.apply"
+	QuadletRemove      Name = "runtime.quadlet.remove"
+	QuadletEnable      Name = "runtime.quadlet.enable"
+	QuadletDisable     Name = "runtime.quadlet.disable"
+	QuadletVolumeReset Name = "runtime.quadlet.reset-volume"
+	QuadletCompletion  Name = "runtime.quadlet.verify-completion"
+	LogRead            Name = "runtime.logs.read"
+	Exec               Name = "runtime.exec"
+	Terminal           Name = "runtime.terminal"
+	Metrics            Name = "runtime.metrics"
+	Health             Name = "connector.health"
+	Capabilities       Name = "connector.capabilities"
+	BundleStage        Name = "artifact.bundle.stage"
 )
 
 type Descriptor struct {
@@ -63,6 +64,7 @@ func Baseline() []Descriptor {
 		{Name: QuadletRemove, Available: true, Detail: "Podman targets only"},
 		{Name: QuadletEnable, Available: true, Detail: "Podman targets only"},
 		{Name: QuadletDisable, Available: true, Detail: "Podman targets only"},
+		{Name: QuadletVolumeReset, Available: true, Detail: "Reset exact owned published Podman volume after teardown"},
 		{Name: QuadletCompletion, Available: true, Detail: "Verify successful execution of the exact published Podman source"},
 		{Name: LogRead, Available: true},
 		{Name: Exec, Available: true},

@@ -75,3 +75,55 @@ func TestManagedActivationRequiresImmutablePublishedBundle(t *testing.T) {
 		t.Fatal("unstaged managed activation accepted")
 	}
 }
+
+func TestQuadletVolumeResetWireRefusesUnboundOrForcedRemoval(t *testing.T) {
+	raw, err := ReadTargetAccessGoldenFixtures()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var fixtures []struct {
+		Wire json.RawMessage `json:"wire"`
+	}
+	if json.Unmarshal(raw, &fixtures) != nil {
+		t.Fatal("invalid fixtures")
+	}
+	var record map[string]any
+	for _, fixture := range fixtures {
+		var candidate map[string]any
+		if json.Unmarshal(fixture.Wire, &candidate) == nil && candidate["request_id"] == "request-quadlet-volume-reset" {
+			record = candidate
+		}
+	}
+	if record == nil {
+		t.Fatal("missing positive reset fixture")
+	}
+	valid, _ := json.Marshal(record)
+	if err := ValidateTargetAccessRecord("request", valid); err != nil {
+		t.Fatal(err)
+	}
+	for _, scenario := range []string{"host-path", "container", "force", "missing-bundle"} {
+		var changed map[string]any
+		_ = json.Unmarshal(valid, &changed)
+		payload := changed["payload"].(map[string]any)
+		switch scenario {
+		case "host-path":
+			payload["project_directory"] = "/tmp/foreign"
+		case "container":
+			payload["name"] = "owned.container"
+		case "force":
+			payload["force"] = true
+		case "missing-bundle":
+			delete(payload, "project_directory")
+		}
+		encoded, _ := json.Marshal(changed)
+		if ValidateTargetAccessRecord("request", encoded) == nil {
+			t.Fatal("unsafe reset request accepted", scenario)
+		}
+	}
+}
+
+func TestPublishedVolumeResetRequiresDurableMutationAdmission(t *testing.T) {
+	if !RequiresAdmission(OpQuadletVolumeReset) {
+		t.Fatal("destructive reset was treated as a read-only observation")
+	}
+}

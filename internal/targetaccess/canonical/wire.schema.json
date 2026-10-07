@@ -113,7 +113,8 @@
             "connector.health",
             "connector.capabilities",
             "artifact.bundle.stage",
-            "runtime.quadlet.verify-completion"
+            "runtime.quadlet.verify-completion",
+            "runtime.quadlet.reset-volume"
           ]
         },
         "available": {
@@ -1269,7 +1270,8 @@
             "connector.health",
             "connector.capabilities",
             "artifact.bundle.stage",
-            "runtime.quadlet.verify-completion"
+            "runtime.quadlet.verify-completion",
+            "runtime.quadlet.reset-volume"
           ]
         },
         "issued_at": {
@@ -1625,6 +1627,19 @@
           "required": [
             "payload"
           ]
+        },
+        {
+          "properties": {
+            "operation": {
+              "const": "runtime.quadlet.reset-volume"
+            },
+            "payload": {
+              "$ref": "#/$defs/quadlet_volume_reset"
+            }
+          },
+          "required": [
+            "payload"
+          ]
         }
       ]
     },
@@ -1640,6 +1655,30 @@
         "name": {
           "type": "string",
           "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,63}\\.container$"
+        },
+        "content": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 262144
+        },
+        "project_directory": {
+          "type": "string",
+          "pattern": "^bundles/\\.object-[0-9a-f]{32}$"
+        }
+      }
+    },
+    "quadlet_volume_reset": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "content",
+        "project_directory"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,63}\\.volume$"
         },
         "content": {
           "type": "string",

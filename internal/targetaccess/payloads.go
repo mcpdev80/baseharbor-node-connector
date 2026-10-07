@@ -94,3 +94,11 @@ type QuadletCompletionResult struct {
 	ContentSHA256    string `json:"content_sha256"`
 	Completed        bool   `json:"completed"`
 }
+
+// QuadletVolumeResetRequest selects exact previously realized volume source.
+// It cannot force removal, select a host path, or implicitly stop workloads.
+type QuadletVolumeResetRequest struct {
+	Name             string `json:"name"`
+	Content          string `json:"content"`
+	ProjectDirectory string `json:"project_directory"`
+}

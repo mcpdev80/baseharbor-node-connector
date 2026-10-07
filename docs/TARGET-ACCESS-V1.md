@@ -343,3 +343,12 @@ before it starts the dependent. Omitting `autostart` retains ordinary apply
 behavior; specifying it requires `project_directory`. This is a bounded activation
 instruction, not application policy or a new node authority. Target membership
 checks do not claim an actual reboot or full Application lifecycle qualification.
+
+`runtime.quadlet.reset-volume` carries an explicit Core data reset decision for
+one published `.volume` source and immutable bundle. It is a mutating operation
+with durable admission. Exact retained realization, absent active unit and live
+native project labels are required. It never force-removes an in-use volume or
+stops another workload; successful native absence is checked after removal.
+Foreign, changed, unbound or active resources fail closed. An already absent
+volume still requires the exact protected realization proof. Ordinary unit
+removal retains data; release qualification requires the actual native reset test.
