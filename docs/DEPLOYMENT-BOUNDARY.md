@@ -116,7 +116,7 @@ Source checks are separate from exact-ref production/runtime qualification.
 
 The opt-in `runtime-validation/enrollment/**` push runs the separately built
 Connector against the exact public Core harness at
-`f85bd6c1de5a1385e1aec91144b7d031221a3ee5`, with actual OpenBao 2.7.0, isolated
+`4ff3ce91a6c46ae19f6e672169c397bb002e689a`, with actual OpenBao 2.7.0, isolated
 PostgreSQL storage/admission and either Docker or rootless Podman. It exchanges
 a persisted one-use Core grant over verified HTTPS, opens outbound mTLS, retains
 the local node key during explicit renewal, verifies live CA overlap and old-root
