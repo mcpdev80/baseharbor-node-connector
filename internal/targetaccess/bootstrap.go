@@ -231,7 +231,10 @@ func EnsureEnrollmentPrivateKey(path string) error {
 	if path == "" {
 		return errors.New("enrollment private key path is required")
 	}
-	if info, err := os.Stat(path); err == nil {
+	if info, err := os.Lstat(path); err == nil {
+		if !info.Mode().IsRegular() {
+			return errors.New("enrollment private key path must be a regular file (symlinks forbidden)")
+		}
 		if info.IsDir() {
 			return errors.New("enrollment private key path is a directory")
 		}
