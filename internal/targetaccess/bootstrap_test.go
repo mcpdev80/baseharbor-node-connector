@@ -162,3 +162,18 @@ func TestEnsureEnrollmentPrivateKeyCreatesPrivateKeyOnce(t *testing.T) {
 		t.Fatal("existing enrollment private key was replaced")
 	}
 }
+
+func TestEnsureEnrollmentPrivateKeyRejectsSymlink(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(root, "node.key")
+	if err := EnsureEnrollmentPrivateKey(path); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(root, "linked.key")
+	if err := os.Symlink(path, link); err != nil {
+		t.Fatal(err)
+	}
+	if err := EnsureEnrollmentPrivateKey(link); err == nil || !strings.Contains(err.Error(), "symlinks forbidden") {
+		t.Fatalf("symlink to private key must fail closed: %v", err)
+	}
+}
