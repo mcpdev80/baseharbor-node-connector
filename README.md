@@ -215,3 +215,13 @@ records fail closed. The bounded journal never automatically forgets admission.
 An unavailable journal suppresses side-effect capabilities. This implementation
 uses a protected local Linux filesystem; it does not qualify remote execution,
 rotation or active-session revocation by itself.
+
+## v0.4.24 integration candidate and acceptance boundary
+
+Node Connector candidate: `bceafc43befc6f52f5da56c796519edeaafe80b4` ([PR #5](https://github.com/mcpdev80/baseharbor-node-connector/pull/5)).
+Core candidate under active development: `49a2fab76079b98b5697ba9f556abb6e6c066cac` ([Core PR #837](https://github.com/mcpdev80/baseharbor/pull/837)).
+Console candidate: `de4b6fd436d70b7d03d38069b1873e23305580ad` ([Console PR #4](https://github.com/mcpdev80/baseharbor-console/pull/4)).
+
+Connector package-local `go test ./... -count=1`, `go vet ./...` and formatting passed on the cited Connector commit ([HF evidence](https://huggingface.co/jobs/ThunderHawk1080/6ac7eb7e095c5780892fc9f9)). Final joint-sha remote Docker/Podman enrollment, node reconnect, replay rejection, rotation/revocation, resource ownership, lifecycle cleanup and Console OIDC/RBAC acceptance remain required. Passing v0.4.23 integration evidence against a different Core SHA does not qualify this candidate.
+
+This section is a candidate matrix, **not** a release pin or a claim of final integrated acceptance.
