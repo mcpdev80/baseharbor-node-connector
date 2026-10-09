@@ -225,3 +225,5 @@ Console candidate: `de4b6fd436d70b7d03d38069b1873e23305580ad` ([Console PR #4](h
 Connector package-local `go test ./... -count=1`, `go vet ./...` and formatting passed on the cited Connector commit ([HF evidence](https://huggingface.co/jobs/ThunderHawk1080/6ac7eb7e095c5780892fc9f9)). Final joint-sha remote Docker/Podman enrollment, node reconnect, replay rejection, rotation/revocation, resource ownership, lifecycle cleanup and Console OIDC/RBAC acceptance remain required. Passing v0.4.23 integration evidence against a different Core SHA does not qualify this candidate.
 
 This section is a candidate matrix, **not** a release pin or a claim of final integrated acceptance.
+
+The v0.4.24 joint runtime candidate is defined by immutable Core, Console and Demo commits in `integration-candidate.json`. The targeted Docker/Podman matrix exercises native managed enrollment, mTLS, rotation, replay/revocation and the real Console OIDC/RBAC/application journeys against that same Core. Runtime results are pending until recorded in Core PR #837.
