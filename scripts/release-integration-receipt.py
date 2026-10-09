@@ -56,6 +56,10 @@ if gate=='integration/static/live-console': qualifications={name:True for name i
 else:
     require(gate=='integration/'+os.environ['BASEHARBOR_CONNECTOR_RUNTIME_KIND']+'/remote-target','gate runtime differs')
     qualifications={name:True for name in ['production-enrollment','ca-overlap-renewal-revocation','outbound-mtls','application-plan-apply-status-doctor-repair-destroy','secret-tls','foreign-preservation']}
+# Every gate above already requires the complete native browser and HTTP
+# journey. Retain those verified Console qualifications alongside Connector
+# evidence so the joint run can satisfy both consumers without another journey.
+qualifications.update({name:True for name in required})
 qualifications['owned-cleanup']=True
 run=os.environ['GITHUB_RUN_ID']; attempt=int(os.environ['GITHUB_RUN_ATTEMPT'])
 require(str(native['run_id'])==run and int(native['run_attempt'])==attempt and attempt>0,'native origin differs')
