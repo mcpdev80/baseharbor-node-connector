@@ -1,7 +1,7 @@
 {
   "schema": "baseharbor.ecosystem-candidate/v1",
   "release": "0.4.24",
-  "core": "18a6842742155bad28c197ca2c64c8b57e1c402f",
-  "demo": "8c10b1cbc3a382929283215c527c143de8c0a4b8",
-  "console": "b7c53ef07e37444ea45b55a90387a9a343cdf926"
+  "core": "61d99add7565eef5dd31ccb738bbf5716be3adbe",
+  "demo": "9cd494da608fcf4c11efc9e6d164fe699908e9ce",
+  "console": "0379311e2e0335e4db796777b49967b5b2b9b133"
 }
