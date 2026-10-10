@@ -194,7 +194,7 @@ jobs:
 
         docker pull "$identity"
 
-        image="$identity"
+        image="quay.io/keycloak/keycloak@${identity##*@}"
 
         echo "BASEHARBOR_BROWSER_KEYCLOAK_IMAGE=$image" >> "$GITHUB_ENV"
 
@@ -243,7 +243,7 @@ jobs:
 
         "$BASEHARBOR_CONNECTOR_RUNTIME_KIND" pull "$identity"
 
-        image="$identity"
+        image="quay.io/keycloak/keycloak@${identity##*@}"
 
         echo "BASEHARBOR_CONNECTOR_IDENTITY_IMAGE=$image" >> "$GITHUB_ENV"
 
