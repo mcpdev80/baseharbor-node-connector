@@ -188,13 +188,13 @@ jobs:
       shell: bash
       run: 'set -euo pipefail
 
-        grep -F ''KeycloakImage      = "quay.io/keycloak/keycloak:26.8.0"'' .browser-core-source/internal/identityprovider/keycloak_files.go
+        identity="$(awk ''/KeycloakImage[[:space:]]*=/ {gsub(/"/,"",$3);print $3}'' .browser-core-source/internal/identityprovider/keycloak_files.go)"
 
-        docker pull quay.io/keycloak/keycloak:26.8.0
+        [[ "$identity" =~ ^quay.io/keycloak/keycloak:26[.]8[.]0@sha256:[0-9a-f]{64}$ ]]
 
-        image="$(docker image inspect quay.io/keycloak/keycloak:26.8.0 --format ''{{index .RepoDigests 0}}'')"
+        docker pull "$identity"
 
-        [[ "$image" == *@sha256:* ]]
+        image="$identity"
 
         echo "BASEHARBOR_BROWSER_KEYCLOAK_IMAGE=$image" >> "$GITHUB_ENV"
 
@@ -239,13 +239,11 @@ jobs:
 
         identity="$(awk ''/KeycloakImage[[:space:]]*=/ {gsub(/"/,"",$3);print $3}'' .browser-core-source/internal/identityprovider/keycloak_files.go)"
 
-        [[ "$identity" == quay.io/keycloak/keycloak:* ]]
+        [[ "$identity" =~ ^quay.io/keycloak/keycloak:26[.]8[.]0@sha256:[0-9a-f]{64}$ ]]
 
         "$BASEHARBOR_CONNECTOR_RUNTIME_KIND" pull "$identity"
 
-        image="$("$BASEHARBOR_CONNECTOR_RUNTIME_KIND" image inspect "$identity" --format ''{{index .RepoDigests 0}}'')"
-
-        [[ "$image" == quay.io/keycloak/keycloak@sha256:* ]]
+        image="$identity"
 
         echo "BASEHARBOR_CONNECTOR_IDENTITY_IMAGE=$image" >> "$GITHUB_ENV"
 
