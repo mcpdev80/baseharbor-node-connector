@@ -8,7 +8,6 @@ import (
 	"crypto/rand"
 	"crypto/tls"
 	"crypto/x509"
-	"encoding/base64"
 	"encoding/json"
 	"encoding/pem"
 	"errors"
@@ -24,13 +23,13 @@ import (
 const maxEnrollmentResponseBytes = 1 << 20
 
 type BootstrapConfig struct {
-	EnrollmentURL          string
-	TrustBundleFile        string
-	TokenFile              string
-	ExpectedServerIdentity string
-	ServerName             string
-	Timeout                time.Duration
-	RetainBootstrapToken   bool
+	EnrollmentURL                string
+	TrustBundleFile              string
+	AuthorizationFile            string
+	ExpectedServerIdentity       string
+	ServerName                   string
+	Timeout                      time.Duration
+	RetainBootstrapAuthorization bool
 }
 
 func (c BootstrapConfig) Validate() error {
@@ -38,9 +37,12 @@ func (c BootstrapConfig) Validate() error {
 	if err != nil || u.Scheme != "https" || strings.TrimSpace(u.Host) == "" {
 		return errors.New("enrollment_url must be an absolute HTTPS URL")
 	}
+	if u.User != nil || u.RawQuery != "" || u.Fragment != "" || u.Opaque != "" {
+		return errors.New("enrollment_url must not contain credentials, query parameters or fragments")
+	}
 	for name, value := range map[string]string{
 		"trust_bundle_file":        c.TrustBundleFile,
-		"token_file":               c.TokenFile,
+		"authorization_file":       c.AuthorizationFile,
 		"expected_server_identity": c.ExpectedServerIdentity,
 	} {
 		if strings.TrimSpace(value) == "" {
@@ -66,10 +68,12 @@ func BootstrapEnroll(ctx context.Context, cfg BootstrapConfig, files TLSFiles, n
 		return EnrollmentResponse{}, errors.New("certificate, private key and trust bundle destination paths are required")
 	}
 
-	token, err := readBootstrapToken(cfg.TokenFile)
+	authorization, err := readBootstrapAuthorization(cfg.AuthorizationFile, time.Now().UTC())
 	if err != nil {
 		return EnrollmentResponse{}, err
 	}
+	ctx, cancel := context.WithDeadline(ctx, authorization.ExpiresAt)
+	defer cancel()
 	if err := EnsureEnrollmentPrivateKey(files.PrivateKeyFile); err != nil {
 		return EnrollmentResponse{}, err
 	}
@@ -77,12 +81,10 @@ func BootstrapEnroll(ctx context.Context, cfg BootstrapConfig, files TLSFiles, n
 	if err != nil {
 		return EnrollmentResponse{}, err
 	}
-	nonce, err := bootstrapNonce()
-	if err != nil {
-		return EnrollmentResponse{}, err
-	}
+	nonce := authorization.Nonce
 	enrollmentRequest := EnrollmentRequest{
 		ContractVersion: EnrollmentContractVersion,
+		TenantID:        node.TenantID,
 		NodeID:          node.NodeID,
 		TargetID:        node.TargetID,
 		Runtime:         node.Runtime,
@@ -107,7 +109,7 @@ func BootstrapEnroll(ctx context.Context, cfg BootstrapConfig, files TLSFiles, n
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json")
-	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Authorization", "Bearer "+authorization.Token)
 
 	resp, err := client.Do(req)
 	if err != nil {
@@ -125,18 +127,21 @@ func BootstrapEnroll(ctx context.Context, cfg BootstrapConfig, files TLSFiles, n
 		return EnrollmentResponse{}, fmt.Errorf("bootstrap enrollment failed with HTTP %d", resp.StatusCode)
 	}
 
+	if ValidateTargetAccessRecord("enrollment_response", body) != nil {
+		return EnrollmentResponse{}, errors.New("invalid bootstrap enrollment response")
+	}
 	var enrollment EnrollmentResponse
 	decoder := json.NewDecoder(bytes.NewReader(body))
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(&enrollment); err != nil {
-		return EnrollmentResponse{}, fmt.Errorf("decode bootstrap enrollment response: %w", err)
+		return EnrollmentResponse{}, errors.New("invalid bootstrap enrollment response")
 	}
 	var trailing any
 	if err := decoder.Decode(&trailing); !errors.Is(err, io.EOF) {
 		if err == nil {
 			return EnrollmentResponse{}, errors.New("bootstrap enrollment response contains trailing JSON values")
 		}
-		return EnrollmentResponse{}, fmt.Errorf("decode trailing bootstrap enrollment response: %w", err)
+		return EnrollmentResponse{}, errors.New("invalid bootstrap enrollment response")
 	}
 	if err := validateEnrollmentBinding(node, enrollment.Node); err != nil {
 		return EnrollmentResponse{}, err
@@ -147,8 +152,8 @@ func BootstrapEnroll(ctx context.Context, cfg BootstrapConfig, files TLSFiles, n
 	if err := InstallEnrollment(files, enrollment, time.Now().UTC()); err != nil {
 		return EnrollmentResponse{}, err
 	}
-	if !cfg.RetainBootstrapToken {
-		if err := os.Remove(cfg.TokenFile); err != nil && !errors.Is(err, os.ErrNotExist) {
+	if !cfg.RetainBootstrapAuthorization {
+		if err := os.Remove(cfg.AuthorizationFile); err != nil && !errors.Is(err, os.ErrNotExist) {
 			return EnrollmentResponse{}, fmt.Errorf("remove consumed bootstrap token: %w", err)
 		}
 	}
@@ -187,29 +192,38 @@ func bootstrapHTTPClient(cfg BootstrapConfig) (*http.Client, error) {
 	}, nil
 }
 
-func readBootstrapToken(path string) (string, error) {
-	info, err := os.Stat(path)
+type BootstrapAuthorization struct {
+	Token     string    `json:"token"`
+	Nonce     string    `json:"nonce"`
+	ExpiresAt time.Time `json:"expires_at"`
+}
+
+func readBootstrapAuthorization(path string, now time.Time) (BootstrapAuthorization, error) {
+	invalid := func() (BootstrapAuthorization, error) {
+		return BootstrapAuthorization{}, errors.New("bootstrap authorization is invalid, expired or not privately stored")
+	}
+	info, err := os.Lstat(path)
+	if err != nil || !info.Mode().IsRegular() || info.Mode().Perm()&0o077 != 0 {
+		return invalid()
+	}
+	file, err := os.Open(path)
 	if err != nil {
-		return "", fmt.Errorf("inspect bootstrap token: %w", err)
+		return invalid()
 	}
-	if info.IsDir() {
-		return "", errors.New("bootstrap token path is a directory")
+	defer file.Close()
+	opened, err := file.Stat()
+	if err != nil || !os.SameFile(info, opened) || !opened.Mode().IsRegular() || opened.Mode().Perm()&0o077 != 0 {
+		return invalid()
 	}
-	if info.Mode().Perm()&0o077 != 0 {
-		return "", errors.New("bootstrap token file permissions must not grant group or other access")
+	data, err := io.ReadAll(io.LimitReader(file, 8193))
+	if err != nil || len(data) > 8192 || ValidateTargetAccessRecord("bootstrap_authorization", data) != nil {
+		return invalid()
 	}
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return "", fmt.Errorf("read bootstrap token: %w", err)
+	var authorization BootstrapAuthorization
+	if json.Unmarshal(data, &authorization) != nil || !authorization.ExpiresAt.After(now) || authorization.ExpiresAt.After(now.Add(10*time.Minute+30*time.Second)) {
+		return invalid()
 	}
-	token := strings.TrimSpace(string(data))
-	if token == "" {
-		return "", errors.New("bootstrap token is empty")
-	}
-	if strings.ContainsAny(token, "\r\n\x00") {
-		return "", errors.New("bootstrap token must be a single line")
-	}
-	return token, nil
+	return authorization, nil
 }
 
 func EnsureEnrollmentPrivateKey(path string) error {
@@ -217,7 +231,10 @@ func EnsureEnrollmentPrivateKey(path string) error {
 	if path == "" {
 		return errors.New("enrollment private key path is required")
 	}
-	if info, err := os.Stat(path); err == nil {
+	if info, err := os.Lstat(path); err == nil {
+		if !info.Mode().IsRegular() {
+			return errors.New("enrollment private key path must be a regular file (symlinks forbidden)")
+		}
 		if info.IsDir() {
 			return errors.New("enrollment private key path is a directory")
 		}
@@ -290,16 +307,8 @@ func createEnrollmentCSR(privateKeyPath, identity string) (string, error) {
 	return string(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE REQUEST", Bytes: der})), nil
 }
 
-func bootstrapNonce() (string, error) {
-	value := make([]byte, 32)
-	if _, err := rand.Read(value); err != nil {
-		return "", err
-	}
-	return base64.RawURLEncoding.EncodeToString(value), nil
-}
-
 func validateEnrollmentBinding(expected, actual NodeIdentity) error {
-	if expected.NodeID != actual.NodeID ||
+	if expected.TenantID != actual.TenantID || expected.NodeID != actual.NodeID ||
 		expected.TargetID != actual.TargetID ||
 		expected.Runtime != actual.Runtime ||
 		expected.Identity != actual.Identity {

@@ -16,6 +16,7 @@ const (
 )
 
 type NodeIdentity struct {
+	TenantID   string `json:"tenant_id"`
 	NodeID     string `json:"node_id"`
 	TargetID   string `json:"target_id"`
 	Runtime    string `json:"runtime"`
@@ -24,6 +25,13 @@ type NodeIdentity struct {
 }
 
 func (n NodeIdentity) Validate() error {
+	data, err := json.Marshal(Hello{ContractVersions: []string{ContractVersion}, ProtocolVersions: []string{ProtocolVersion}, Node: n})
+	if err != nil || ValidateTargetAccessRecord("hello", data) != nil {
+		return ErrTargetAccessWire
+	}
+	if strings.HasPrefix(n.Identity, "spiffe://baseharbor/platform/connectors/") && n.Identity != "spiffe://baseharbor/platform/connectors/"+n.TenantID+"/"+n.TargetID+"/"+n.NodeID {
+		return ErrTargetAccessWire
+	}
 	if strings.TrimSpace(n.NodeID) == "" {
 		return errors.New("node_id is required")
 	}
@@ -47,6 +55,10 @@ type CapabilitySet struct {
 }
 
 func (c CapabilitySet) Validate() error {
+	data, err := json.Marshal(c)
+	if err != nil || ValidateTargetAccessRecord("capabilities", data) != nil {
+		return ErrTargetAccessWire
+	}
 	if c.ContractVersion != ContractVersion {
 		return fmt.Errorf("unsupported target-access contract version %q", c.ContractVersion)
 	}
@@ -59,33 +71,35 @@ func (c CapabilitySet) Validate() error {
 type Operation string
 
 const (
-	OpRuntimeDetect    Operation = "runtime.detect"
-	OpResourceList     Operation = "runtime.resource.list"
-	OpResourceInspect  Operation = "runtime.resource.inspect"
-	OpImageList        Operation = "runtime.image.list"
-	OpImagePull        Operation = "runtime.image.pull"
-	OpVolumeList       Operation = "runtime.volume.list"
-	OpVolumeEnsure     Operation = "runtime.volume.ensure"
-	OpVolumeRemove     Operation = "runtime.volume.remove"
-	OpNetworkList      Operation = "runtime.network.list"
-	OpNetworkEnsure    Operation = "runtime.network.ensure"
-	OpNetworkRemove    Operation = "runtime.network.remove"
-	OpContainerStart   Operation = "runtime.container.start"
-	OpContainerStop    Operation = "runtime.container.stop"
-	OpContainerRestart Operation = "runtime.container.restart"
-	OpContainerRemove  Operation = "runtime.container.remove"
-	OpComposeApply     Operation = "runtime.compose.apply"
-	OpComposeDestroy   Operation = "runtime.compose.destroy"
-	OpQuadletApply     Operation = "runtime.quadlet.apply"
-	OpQuadletRemove    Operation = "runtime.quadlet.remove"
-	OpQuadletEnable    Operation = "runtime.quadlet.enable"
-	OpQuadletDisable   Operation = "runtime.quadlet.disable"
-	OpLogRead          Operation = "runtime.logs.read"
-	OpExec             Operation = "runtime.exec"
-	OpMetrics          Operation = "runtime.metrics"
-	OpHealth           Operation = "connector.health"
-	OpCapabilities     Operation = "connector.capabilities"
-	OpBundleStage      Operation = "artifact.bundle.stage"
+	OpRuntimeDetect      Operation = "runtime.detect"
+	OpResourceList       Operation = "runtime.resource.list"
+	OpResourceInspect    Operation = "runtime.resource.inspect"
+	OpImageList          Operation = "runtime.image.list"
+	OpImagePull          Operation = "runtime.image.pull"
+	OpVolumeList         Operation = "runtime.volume.list"
+	OpVolumeEnsure       Operation = "runtime.volume.ensure"
+	OpVolumeRemove       Operation = "runtime.volume.remove"
+	OpNetworkList        Operation = "runtime.network.list"
+	OpNetworkEnsure      Operation = "runtime.network.ensure"
+	OpNetworkRemove      Operation = "runtime.network.remove"
+	OpContainerStart     Operation = "runtime.container.start"
+	OpContainerStop      Operation = "runtime.container.stop"
+	OpContainerRestart   Operation = "runtime.container.restart"
+	OpContainerRemove    Operation = "runtime.container.remove"
+	OpComposeApply       Operation = "runtime.compose.apply"
+	OpComposeDestroy     Operation = "runtime.compose.destroy"
+	OpQuadletApply       Operation = "runtime.quadlet.apply"
+	OpQuadletRemove      Operation = "runtime.quadlet.remove"
+	OpQuadletEnable      Operation = "runtime.quadlet.enable"
+	OpQuadletDisable     Operation = "runtime.quadlet.disable"
+	OpQuadletVolumeReset Operation = "runtime.quadlet.reset-volume"
+	OpQuadletCompletion  Operation = "runtime.quadlet.verify-completion"
+	OpLogRead            Operation = "runtime.logs.read"
+	OpExec               Operation = "runtime.exec"
+	OpMetrics            Operation = "runtime.metrics"
+	OpHealth             Operation = "connector.health"
+	OpCapabilities       Operation = "connector.capabilities"
+	OpBundleStage        Operation = "artifact.bundle.stage"
 )
 
 var allowedOperations = map[Operation]struct{}{
@@ -93,7 +107,7 @@ var allowedOperations = map[Operation]struct{}{
 	OpImageList: {}, OpImagePull: {}, OpVolumeList: {}, OpVolumeEnsure: {}, OpVolumeRemove: {},
 	OpNetworkList: {}, OpNetworkEnsure: {}, OpNetworkRemove: {}, OpContainerStart: {}, OpContainerStop: {},
 	OpContainerRestart: {}, OpContainerRemove: {}, OpComposeApply: {}, OpComposeDestroy: {},
-	OpQuadletApply: {}, OpQuadletRemove: {}, OpQuadletEnable: {}, OpQuadletDisable: {},
+	OpQuadletApply: {}, OpQuadletRemove: {}, OpQuadletEnable: {}, OpQuadletDisable: {}, OpQuadletCompletion: {}, OpQuadletVolumeReset: {},
 	OpLogRead: {}, OpExec: {}, OpMetrics: {}, OpHealth: {}, OpCapabilities: {}, OpBundleStage: {},
 }
 
@@ -108,14 +122,19 @@ type Request struct {
 	ContractVersion string          `json:"contract_version"`
 	ProtocolVersion string          `json:"protocol_version"`
 	RequestID       string          `json:"request_id"`
-	CorrelationID   string          `json:"correlation_id,omitempty"`
+	CorrelationID   string          `json:"correlation_id"`
 	TargetID        string          `json:"target_id"`
 	Operation       Operation       `json:"operation"`
 	IssuedAt        time.Time       `json:"issued_at"`
+	DeadlineAt      time.Time       `json:"deadline_at"`
 	Payload         json.RawMessage `json:"payload,omitempty"`
 }
 
 func (r Request) Validate(now time.Time) error {
+	data, err := json.Marshal(r)
+	if err != nil || ValidateTargetAccessRecord("request", data) != nil {
+		return ErrTargetAccessWire
+	}
 	if r.ContractVersion != ContractVersion {
 		return fmt.Errorf("unsupported target-access contract version %q", r.ContractVersion)
 	}
@@ -137,6 +156,9 @@ func (r Request) Validate(now time.Time) error {
 	if now.IsZero() {
 		now = time.Now().UTC()
 	}
+	if !r.DeadlineAt.After(now) || r.DeadlineAt.After(now.Add(30*time.Minute)) || !r.DeadlineAt.After(r.IssuedAt) {
+		return ErrTargetAccessWire
+	}
 	const skew = 5 * time.Minute
 	if r.IssuedAt.Before(now.Add(-skew)) || r.IssuedAt.After(now.Add(skew)) {
 		return errors.New("issued_at is outside the accepted clock-skew window")
@@ -148,7 +170,7 @@ type Response struct {
 	ContractVersion string          `json:"contract_version"`
 	ProtocolVersion string          `json:"protocol_version"`
 	RequestID       string          `json:"request_id"`
-	CorrelationID   string          `json:"correlation_id,omitempty"`
+	CorrelationID   string          `json:"correlation_id"`
 	Success         bool            `json:"success"`
 	Result          json.RawMessage `json:"result,omitempty"`
 	Error           *Error          `json:"error,omitempty"`
@@ -180,4 +202,12 @@ func FailureResponse(request Request, code, message string, retryable bool) Resp
 		Success:         false,
 		Error:           &Error{Code: code, Message: message, Retryable: retryable},
 	}
+}
+
+type Cancel struct {
+	ContractVersion string `json:"contract_version"`
+	ProtocolVersion string `json:"protocol_version"`
+	RequestID       string `json:"request_id"`
+	CorrelationID   string `json:"correlation_id"`
+	Cancel          bool   `json:"cancel"`
 }

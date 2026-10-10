@@ -7,6 +7,7 @@ import (
 	"crypto/rand"
 	"crypto/x509"
 	"crypto/x509/pkix"
+	"encoding/json"
 	"encoding/pem"
 	"math/big"
 	"net"
@@ -26,8 +27,8 @@ type testTLSMaterial struct {
 
 func TestOpenSessionMutualTLSNegotiationAndRequestFrame(t *testing.T) {
 	caCert, caKey, caPEM := newTestCA(t)
-	core := newTestLeaf(t, caCert, caKey, caPEM, "spiffe://baseharbor/core/control-plane", big.NewInt(2))
-	node := newTestLeaf(t, caCert, caKey, caPEM, "spiffe://baseharbor/node/node-a", big.NewInt(3))
+	core := newTestLeaf(t, caCert, caKey, caPEM, "spiffe://baseharbor/platform/core/control-plane", big.NewInt(2))
+	node := newTestLeaf(t, caCert, caKey, caPEM, "spiffe://baseharbor/platform/connectors/11111111-1111-4111-8111-111111111111/target-a/node-a", big.NewInt(3))
 
 	serverConn, clientConn := net.Pipe()
 	defer serverConn.Close()
@@ -39,14 +40,14 @@ func TestOpenSessionMutualTLSNegotiationAndRequestFrame(t *testing.T) {
 	serverHello := Hello{
 		ContractVersions: []string{ContractVersion},
 		ProtocolVersions: []string{ProtocolVersion},
-		Node: NodeIdentity{
+		Node: NodeIdentity{TenantID: "11111111-1111-4111-8111-111111111111",
 			NodeID: "node-a", TargetID: "target-a", Runtime: "docker", Identity: node.identity,
 		},
 	}
 	clientHello := Hello{
 		ContractVersions: []string{ContractVersion},
 		ProtocolVersions: []string{ProtocolVersion},
-		Node: NodeIdentity{
+		Node: NodeIdentity{TenantID: "11111111-1111-4111-8111-111111111111",
 			NodeID: "core", TargetID: "target-a", Runtime: "docker", Identity: core.identity,
 		},
 	}
@@ -97,7 +98,9 @@ func TestOpenSessionMutualTLSNegotiationAndRequestFrame(t *testing.T) {
 		CorrelationID:   "corr-1",
 		TargetID:        "target-a",
 		Operation:       OpCapabilities,
+		Payload:         json.RawMessage("{}"),
 		IssuedAt:        time.Now().UTC(),
+		DeadlineAt:      time.Now().UTC().Add(5 * time.Minute),
 	}
 	readResult := make(chan error, 1)
 	go func() {
@@ -117,6 +120,23 @@ func TestOpenSessionMutualTLSNegotiationAndRequestFrame(t *testing.T) {
 	}
 	if err := <-readResult; err != nil {
 		t.Fatal(err)
+	}
+	blocked := make(chan error, 1)
+	go func() { var next Request; blocked <- server.session.ReadRequest(&next) }()
+	started := time.Now()
+	if err := clientSession.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if time.Since(started) > time.Second {
+		t.Fatal("session retirement waited for a stalled TLS peer")
+	}
+	select {
+	case err := <-blocked:
+		if err == nil {
+			t.Fatal("retired session accepted another request")
+		}
+	case <-time.After(time.Second):
+		t.Fatal("session retirement left peer frame reader blocked")
 	}
 }
 
@@ -150,7 +170,7 @@ func newTestCA(t *testing.T) (*x509.Certificate, *ecdsa.PrivateKey, []byte) {
 	return parsed, key, pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der})
 }
 
-func newTestLeaf(t *testing.T, ca *x509.Certificate, caKey *ecdsa.PrivateKey, caPEM []byte, identity string, serial *big.Int) testTLSMaterial {
+func newTestLeaf(t *testing.T, ca *x509.Certificate, caKey *ecdsa.PrivateKey, caPEM []byte, identity string, serial *big.Int, usages ...x509.ExtKeyUsage) testTLSMaterial {
 	t.Helper()
 	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
@@ -160,13 +180,16 @@ func newTestLeaf(t *testing.T, ca *x509.Certificate, caKey *ecdsa.PrivateKey, ca
 	if err != nil {
 		t.Fatal(err)
 	}
+	if len(usages) == 0 {
+		usages = []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth, x509.ExtKeyUsageServerAuth}
+	}
 	cert := &x509.Certificate{
 		SerialNumber: serial,
 		Subject:      pkix.Name{CommonName: identity},
 		NotBefore:    time.Now().Add(-time.Hour),
 		NotAfter:     time.Now().Add(time.Hour),
 		KeyUsage:     x509.KeyUsageDigitalSignature,
-		ExtKeyUsage:  []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth, x509.ExtKeyUsageServerAuth},
+		ExtKeyUsage:  usages,
 		URIs:         []*url.URL{uri},
 	}
 	der, err := x509.CreateCertificate(rand.Reader, cert, ca, &key.PublicKey, caKey)

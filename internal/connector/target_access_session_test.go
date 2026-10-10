@@ -3,6 +3,7 @@ package connector
 import (
 	"context"
 	"encoding/json"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -12,13 +13,13 @@ import (
 )
 
 func TestTargetAccessCapabilitiesOperationReturnsNegotiatedProjection(t *testing.T) {
-	service := &Service{
+	service := &Service{TransportStateRoot: filepath.Join(t.TempDir(), "transport"),
 		Runtime:      bhruntime.Detection{Kind: bhruntime.Docker},
 		Capabilities: capability.ForRuntime("docker"),
 	}
-	access, err := service.TargetAccess(targetaccess.NodeIdentity{
+	access, err := service.TargetAccess(targetaccess.NodeIdentity{TenantID: "11111111-1111-4111-8111-111111111111",
 		NodeID: "node-a", TargetID: "target-a", Runtime: "docker",
-		Identity: "spiffe://baseharbor/node/node-a",
+		Identity: "spiffe://baseharbor/platform/connectors/11111111-1111-4111-8111-111111111111/target-a/node-a",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -30,7 +31,9 @@ func TestTargetAccessCapabilitiesOperationReturnsNegotiatedProjection(t *testing
 		CorrelationID:   "corr-a",
 		TargetID:        "target-a",
 		Operation:       targetaccess.OpCapabilities,
+		Payload:         json.RawMessage("{}"),
 		IssuedAt:        time.Now().UTC(),
+		DeadlineAt:      time.Now().UTC().Add(5 * time.Minute),
 	})
 	if !response.Success {
 		t.Fatalf("capability request failed: %#v", response.Error)

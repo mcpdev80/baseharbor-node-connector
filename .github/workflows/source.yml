@@ -1,0 +1,301 @@
+name: Connector Source Conformance
+on:
+  push:
+    branches:
+      - feature/v0.4.23-core-integration
+      - 'runtime-validation/source/**'
+      - 'runtime-validation/transport/**'
+      - 'runtime-validation/enrollment/**'
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: connector-source-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  source:
+    if: github.event_name != 'pull_request' || github.head_ref != 'feature/v0.4.23-core-integration'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/setup-go@v7
+        with:
+          go-version: '1.26.2'
+          cache: false
+      - name: Fetch immutable canonical public Core artifacts
+        uses: actions/checkout@v7.0.1
+        with:
+          repository: mcpdev80/baseharbor
+          ref: 9f28af642345a126a75cd3183969973fc93d7f39
+          path: .core-contract-source
+          persist-credentials: false
+      - name: Verify canonical consumer source lock
+        run: |
+          set -euo pipefail
+          test "$(git -C .core-contract-source rev-parse HEAD)" = 9f28af642345a126a75cd3183969973fc93d7f39
+          cmp internal/targetaccess/canonical/wire.schema.json .core-contract-source/contracts/targetaccess/v1/wire.schema.json
+          cmp internal/targetaccess/canonical/wire.golden.json .core-contract-source/contracts/targetaccess/v1/wire.golden.json
+          echo 'a4f3d09819819e1e3c954f2713108a127ed0147b25121e85197284403a01d80a  internal/targetaccess/canonical/wire.schema.json' | sha256sum -c -
+          echo 'a9eb1d1cdda74debb79860eb4e938df8046eed64ae1e9fd1f7281263c91dd48e  internal/targetaccess/canonical/wire.golden.json' | sha256sum -c -
+      - name: Verify exact candidate source formatting
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -z "$(gofmt -l cmd internal)"
+      - name: Verify module checksums
+        run: go mod verify
+      - name: Run conformance and complete Race Detector suite
+        run: go test -race -p 2 ./... -count=1 -v
+      - name: Vet and build CLI
+        run: |
+          go vet -p 2 ./...
+          go build -trimpath -o "$RUNNER_TEMP/baseharbor-node-connector" ./cmd/baseharbor-node-connector
+      - name: Retain exact source receipt
+        run: |
+          python3 - <<'PY'
+          import json, os, subprocess
+          result={'schema':'baseharbor.private-source-receipt/v1','repository':os.environ['GITHUB_REPOSITORY'],'commit':subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip(),'core_commit':'9f28af642345a126a75cd3183969973fc93d7f39','wire_schema_sha256':'a4f3d09819819e1e3c954f2713108a127ed0147b25121e85197284403a01d80a','source_result':'success','runtime_evidence':False,'release_eligible':False,'formatting_applied':bool(subprocess.check_output(['git','diff','--name-only','--','cmd','internal'],text=True).strip()),'run_id':os.environ['GITHUB_RUN_ID'],'run_attempt':os.environ['GITHUB_RUN_ATTEMPT']}
+          open('connector-source-receipt.json','w').write(json.dumps(result,indent=2)+'\n')
+          PY
+      - uses: actions/upload-artifact@v6
+        with:
+          name: connector-source-receipt
+          path: connector-source-receipt.json
+          if-no-files-found: error
+
+  transport:
+    if: github.event_name == 'push' && startsWith(github.ref_name, 'runtime-validation/transport/')
+    name: Actual encrypted transport · ${{ matrix.runtime }}
+    runs-on: ${{ matrix.runtime == 'podman' && 'ubuntu-26.04' || 'ubuntu-latest' }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      max-parallel: 2
+      matrix:
+        runtime: ${{ fromJSON(contains(github.ref_name, '/podman/') && '["podman"]' || '["docker","podman"]') }}
+    env:
+      BASEHARBOR_CONNECTOR_RUNTIME_ACCEPTANCE: 'true'
+      BASEHARBOR_CONNECTOR_RUNTIME_KIND: ${{ matrix.runtime }}
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/setup-go@v7
+        with:
+          go-version: '1.26.2'
+          cache: false
+      - name: Prepare rootless Podman
+        if: matrix.runtime == 'podman'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y podman
+          uid="$(id -u)"
+          sudo loginctl enable-linger "$(id -un)"
+          sudo systemctl start "user@$uid.service"
+          echo "XDG_RUNTIME_DIR=/run/user/$uid" >> "$GITHUB_ENV"
+          echo "DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/$uid/bus" >> "$GITHUB_ENV"
+          XDG_RUNTIME_DIR="/run/user/$uid" DBUS_SESSION_BUS_ADDRESS="unix:path=/run/user/$uid/bus" systemctl --user show-environment >/dev/null
+          test "$(podman info --format '{{.Host.Security.Rootless}}')" = true
+      - name: Checkout immutable public transport harness
+        uses: actions/checkout@v7.0.1
+        with:
+          repository: mcpdev80/baseharbor
+          ref: 9f28af642345a126a75cd3183969973fc93d7f39
+          path: .core-transport-source
+          persist-credentials: false
+      - name: Build exact private Connector and pin actual runtime fixture
+        id: fixture
+        shell: bash
+        run: |
+          set -euo pipefail
+          binary="$RUNNER_TEMP/baseharbor-node-connector"
+          go build -trimpath -o "$binary" ./cmd/baseharbor-node-connector
+          echo "BASEHARBOR_TEST_CONNECTOR_BIN=$binary" >> "$GITHUB_ENV"
+          "$BASEHARBOR_CONNECTOR_RUNTIME_KIND" pull docker.io/library/alpine:3.23
+          image="$("$BASEHARBOR_CONNECTOR_RUNTIME_KIND" image inspect docker.io/library/alpine:3.23 --format '{{index .RepoDigests 0}}')"
+          [[ "$image" == *@sha256:* ]]
+          echo "BASEHARBOR_CONNECTOR_RUNTIME_IMAGE=$image" >> "$GITHUB_ENV"
+      - name: Exercise actual outbound encrypted transport primitives
+        id: transport
+        working-directory: .core-transport-source
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = 9f28af642345a126a75cd3183969973fc93d7f39
+          go test -race ./internal/targetsession -run '^TestConnectorRuntimeTransport$' -count=1 -v | tee "$RUNNER_TEMP/transport.log"
+      - name: Verify exact runtime fixture cleanup
+        id: cleanup
+        if: always()
+        run: test -z "$("$BASEHARBOR_CONNECTOR_RUNTIME_KIND" ps -aq --filter label=baseharbor.transport-qualification=true)"
+      - name: Retain exact primitive scope and result
+        if: always()
+        env:
+          TRANSPORT_RESULT: ${{ steps.transport.outcome }}
+          CLEANUP_RESULT: ${{ steps.cleanup.outcome }}
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import hashlib,json,os,pathlib,subprocess
+          binary=pathlib.Path(os.environ.get('BASEHARBOR_TEST_CONNECTOR_BIN','/nonexistent'))
+          result={'schema':'baseharbor.private-transport-receipt/v1','repository':os.environ['GITHUB_REPOSITORY'],'commit':subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip(),'core_commit':'9f28af642345a126a75cd3183969973fc93d7f39','connector_binary_sha256':hashlib.sha256(binary.read_bytes()).hexdigest() if binary.is_file() else None,'runtime':os.environ['BASEHARBOR_CONNECTOR_RUNTIME_KIND'],'runtime_image':os.environ.get('BASEHARBOR_CONNECTOR_RUNTIME_IMAGE'),'result':os.environ['TRANSPORT_RESULT'],'cleanup_result':os.environ['CLEANUP_RESULT'],'run_id':os.environ['GITHUB_RUN_ID'],'run_attempt':os.environ['GITHUB_RUN_ATTEMPT'],'test_authority':True,'scope':'encrypted immutable bundle/Compose or Quadlet apply-status-repair-destroy/foreign preservation/inventory/container lifecycle/exec/PTY/follow cancellation','release_eligible':False}
+          pathlib.Path('transport-receipt.json').write_text(json.dumps(result,indent=2)+'\n')
+          PY
+      - uses: actions/upload-artifact@v6
+        if: always()
+        with:
+          name: connector-transport-${{ matrix.runtime }}
+          path: |
+            transport-receipt.json
+            ${{ runner.temp }}/transport.log
+          if-no-files-found: error
+
+  enrollment:
+    if: github.event_name == 'push' && startsWith(github.ref_name, 'runtime-validation/enrollment/')
+    name: Managed native enrollment · ${{ matrix.runtime }}
+    runs-on: ${{ matrix.runtime == 'podman' && 'ubuntu-26.04' || 'ubuntu-latest' }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      max-parallel: 2
+      matrix:
+        runtime: ${{ fromJSON(contains(github.ref_name, '/podman/') && '["podman"]' || '["docker","podman"]') }}
+    env:
+      BASEHARBOR_NATIVE_CONNECTOR_ENROLLMENT: '1'
+      BASEHARBOR_TEST_NATIVE_OPENBAO: '1'
+      BASEHARBOR_TEST_OPENBAO_STORAGE_URL: 'postgres://baseharbor_fixture:fixture-native-pki-only@127.0.0.1:5432/baseharbor_native_pki_fixture?sslmode=disable'
+      BASEHARBOR_CONNECTOR_RUNTIME_KIND: ${{ matrix.runtime }}
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/setup-go@v7
+        with:
+          go-version: '1.26.2'
+          cache: false
+      - name: Prepare rootless Podman
+        if: matrix.runtime == 'podman'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y podman
+          uid="$(id -u)"
+          sudo loginctl enable-linger "$(id -un)"
+          sudo systemctl start "user@$uid.service"
+          echo "XDG_RUNTIME_DIR=/run/user/$uid" >> "$GITHUB_ENV"
+          echo "DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/$uid/bus" >> "$GITHUB_ENV"
+          XDG_RUNTIME_DIR="/run/user/$uid" DBUS_SESSION_BUS_ADDRESS="unix:path=/run/user/$uid/bus" systemctl --user show-environment >/dev/null
+          test "$(podman info --format '{{.Host.Security.Rootless}}')" = true
+      - name: Checkout immutable production enrollment harness
+        uses: actions/checkout@v7.0.1
+        with:
+          repository: mcpdev80/baseharbor
+          ref: 9f28af642345a126a75cd3183969973fc93d7f39
+          path: .core-enrollment-source
+          persist-credentials: false
+      - name: Build exact private Connector and pin actual runtime fixture
+        id: fixture
+        shell: bash
+        run: |
+          set -euo pipefail
+          binary="$RUNNER_TEMP/baseharbor-node-connector"
+          go build -trimpath -o "$binary" ./cmd/baseharbor-node-connector
+          echo "BASEHARBOR_TEST_CONNECTOR_BIN=$binary" >> "$GITHUB_ENV"
+          "$BASEHARBOR_CONNECTOR_RUNTIME_KIND" pull docker.io/library/alpine:3.23
+          image="$("$BASEHARBOR_CONNECTOR_RUNTIME_KIND" image inspect docker.io/library/alpine:3.23 --format '{{index .RepoDigests 0}}')"
+          [[ "$image" == *@sha256:* ]]
+          echo "BASEHARBOR_CONNECTOR_RUNTIME_IMAGE=$image" >> "$GITHUB_ENV"
+      - name: Prepare generated SQL native provider
+        shell: bash
+        run: |
+          set -euo pipefail
+          "$BASEHARBOR_CONNECTOR_RUNTIME_KIND" pull docker.io/library/postgres:18-alpine
+          image="$("$BASEHARBOR_CONNECTOR_RUNTIME_KIND" image inspect docker.io/library/postgres:18-alpine --format '{{index .RepoDigests 0}}')"
+          [[ "$image" == *@sha256:* ]]
+          echo "BASEHARBOR_CONNECTOR_SQL_IMAGE=$image" >> "$GITHUB_ENV"
+      - name: Pin actual reference Identity for operator authorization
+        shell: bash
+        run: |
+          set -euo pipefail
+          identity="$(awk '/KeycloakImage[[:space:]]*=/ {gsub(/"/,"",$3);print $3}' .core-enrollment-source/internal/identityprovider/keycloak_files.go)"
+          [[ "$identity" == quay.io/keycloak/keycloak:* ]]
+          "$BASEHARBOR_CONNECTOR_RUNTIME_KIND" pull "$identity"
+          image="$("$BASEHARBOR_CONNECTOR_RUNTIME_KIND" image inspect "$identity" --format '{{index .RepoDigests 0}}')"
+          [[ "$image" == quay.io/keycloak/keycloak@sha256:* ]]
+          echo "BASEHARBOR_CONNECTOR_IDENTITY_IMAGE=$image" >> "$GITHUB_ENV"
+      - name: Prepare actual isolated OpenBao and PostgreSQL authority
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y postgresql
+          sudo systemctl start postgresql
+          sudo -u postgres psql -v ON_ERROR_STOP=1 -c "CREATE ROLE baseharbor_fixture LOGIN PASSWORD 'fixture-native-pki-only';"
+          sudo -u postgres createdb --owner=baseharbor_fixture baseharbor_native_pki_fixture
+          echo '127.0.0.1 openbao-member-1' | sudo tee -a /etc/hosts >/dev/null
+          mkdir -p "$RUNNER_TEMP/native-bao-bin"
+          curl --fail --location --retry 3 https://github.com/openbao/openbao/releases/download/v2.7.0/openbao_2.7.0_linux_amd64.tar.gz -o "$RUNNER_TEMP/openbao.tar.gz"
+          echo "c3ab5de9e778223445487ccbfb16c291bf491642b688f3a3df5aeba23d9b3667  $RUNNER_TEMP/openbao.tar.gz" | sha256sum -c -
+          tar -xzf "$RUNNER_TEMP/openbao.tar.gz" -C "$RUNNER_TEMP/native-bao-bin"
+          echo "$RUNNER_TEMP/native-bao-bin" >> "$GITHUB_PATH"
+      - name: Verify current-source native Quadlet init completion
+        if: matrix.runtime == 'podman'
+        id: unit_completion
+        env:
+          BASEHARBOR_NATIVE_QUADLET_COMPLETION: '1'
+        shell: bash
+        run: |
+          set -euo pipefail
+          go test -race ./internal/runtime/quadlet -run '^TestNativePublishedCompletion$' -count=1 -v | tee "$RUNNER_TEMP/unit-completion.log"
+      - name: Exercise production managed enrollment with actual outbound Connector
+        id: enrollment
+        working-directory: .core-enrollment-source
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = 9f28af642345a126a75cd3183969973fc93d7f39
+          go test -race ./internal/openbao -run '^TestNativeOpenBaoManagedCoreAndNodeCSRRotation$' -count=1 -v | tee "$RUNNER_TEMP/enrollment.log"
+          python3 - <<'PY'
+          import os,pathlib
+          log=pathlib.Path(os.environ['RUNNER_TEMP'],'enrollment.log').read_text()
+          assert 'actual Keycloak operator authorization/denials, Connector managed enrollment' in log, 'actual operator enrollment proof was not completed'
+          assert 'managed Core project staging, apply, observed running state, repair and destroy preserved foreign fixture' in log, 'managed Core project realization was not completed'
+          assert 'actual enrolled Core-managed provider snapshot publish-restore-apply-repair-destroy preserved immutable TLS source' in log, 'scoped managed provider adapter was not qualified'
+          assert 'managed generated SQL project preserved protected TLS material, native UID 70, verified TLS SELECT 1 and immutable repair; owned containers destroyed and foreign fixture preserved' in log, 'generated remote SQL was not qualified'
+          assert 'protected deployment registry round-trip restored the same immutable SQL project without restaging' in log, 'durable generated SQL project was not qualified'
+          assert 'private Core publication snapshot restored SQL repair and owned teardown after original Core source changed; exact registry receipt retained; full Application engine not qualified' in log, 'private immutable publication restoration was not qualified'
+          assert 'fresh execution-node memory evidence obtained over exact enrolled scope; Core-host fallback not used' in log, 'authenticated node capacity evidence was not qualified'
+          assert 'actual enrolled remote Application engine published provider and prebuilt repository workload together, verified TLS SQL before workload activation, detected lost workload, restored immutable source for repair without restarting provider, verified status and owned reset/cleanup with foreign preservation; complete operator HTTP and Console journey not qualified' in log, 'remote Application engine was not qualified'
+          if os.environ['BASEHARBOR_CONNECTOR_RUNTIME_KIND'] == 'docker':
+              assert 'actual enrolled Docker immutable project activated provider before workload and repaired workload without restarting provider' in log, 'selected application activation phases were not qualified'
+          if os.environ['BASEHARBOR_CONNECTOR_RUNTIME_KIND'] == 'podman':
+              assert 'ordinary generated SQL destroy/reapply reused the exact owned data volume and verified TLS SELECT 1' in log, 'retained Podman SQL provider reuse was not qualified'
+              assert 'actual enrolled rootless Quadlet graph published both units before activation, started dependency before application' in log, 'dependency graph activation was not qualified'
+              assert 'actual enrolled rootless Quadlet completion verified current source over mTLS, restored exact commitment, denied changed, failed, unstarted and removed units' in log, 'authenticated source-bound completion was not qualified'
+              assert 'actual enrolled Podman explicit owned SQL data reset removed exact provider volume, verified absence and reconciled retry without starting containers' in log, 'owned Podman data reset was not qualified'
+              assert 'actual enrolled rootless Core-managed init graph has no default-target automatic activation' in log, 'Core managed activation was not qualified'
+              assert 'actual enrolled rootless generated init graph verified exact completion before dependent activation, refused failed init without activating application, did not rerun successful init' in log, 'generated init dependency sequencing was not qualified'
+          PY
+      - name: Verify exact runtime fixture cleanup
+        id: cleanup
+        if: always()
+        run: test -z "$("$BASEHARBOR_CONNECTOR_RUNTIME_KIND" ps -aq --filter label=baseharbor.enrollment-qualification=true)"
+      - name: Retain exact production exchange scope and result
+        if: always()
+        env:
+          ENROLLMENT_RESULT: ${{ steps.enrollment.outcome }}
+          UNIT_COMPLETION_RESULT: ${{ steps.unit_completion.outcome }}
+          CLEANUP_RESULT: ${{ steps.cleanup.outcome }}
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import hashlib,json,os,pathlib,subprocess
+          binary=pathlib.Path(os.environ.get('BASEHARBOR_TEST_CONNECTOR_BIN','/nonexistent'))
+          result={'schema':'baseharbor.private-managed-enrollment-receipt/v1','repository':os.environ['GITHUB_REPOSITORY'],'commit':subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip(),'core_commit':'9f28af642345a126a75cd3183969973fc93d7f39','connector_binary_sha256':hashlib.sha256(binary.read_bytes()).hexdigest() if binary.is_file() else None,'runtime':os.environ['BASEHARBOR_CONNECTOR_RUNTIME_KIND'],'runtime_image':os.environ.get('BASEHARBOR_CONNECTOR_RUNTIME_IMAGE'),'result':os.environ['ENROLLMENT_RESULT'],'cleanup_result':os.environ['CLEANUP_RESULT'],'run_id':os.environ['GITHUB_RUN_ID'],'run_attempt':os.environ['GITHUB_RUN_ATTEMPT'],'test_authority':False,'production_issuer':True,'persisted_admission':True,'operator_oidc_authorization_evidence':os.environ['ENROLLMENT_RESULT']=='success' and os.environ['CLEANUP_RESULT']=='success','identity_image':os.environ.get('BASEHARBOR_CONNECTOR_IDENTITY_IMAGE'),'managed_provider_adapter_evidence':os.environ['ENROLLMENT_RESULT']=='success' and os.environ['CLEANUP_RESULT']=='success','managed_project_realization_evidence':os.environ['ENROLLMENT_RESULT']=='success' and os.environ['CLEANUP_RESULT']=='success','managed_sql_provider_evidence':os.environ['ENROLLMENT_RESULT']=='success' and os.environ['CLEANUP_RESULT']=='success','sql_image':os.environ.get('BASEHARBOR_CONNECTOR_SQL_IMAGE'),'protected_publication_snapshot_evidence':os.environ['ENROLLMENT_RESULT']=='success' and os.environ['CLEANUP_RESULT']=='success','durable_project_registry_evidence':os.environ['ENROLLMENT_RESULT']=='success' and os.environ['CLEANUP_RESULT']=='success','podman_retained_provider_reuse_evidence':os.environ['BASEHARBOR_CONNECTOR_RUNTIME_KIND']=='podman' and os.environ['ENROLLMENT_RESULT']=='success' and os.environ['CLEANUP_RESULT']=='success','node_memory_evidence':os.environ['ENROLLMENT_RESULT']=='success' and os.environ['CLEANUP_RESULT']=='success','native_init_completion_evidence':os.environ['ENROLLMENT_RESULT']=='success' and os.environ['CLEANUP_RESULT']=='success','quadlet_unit_completion_evidence':os.environ['BASEHARBOR_CONNECTOR_RUNTIME_KIND']=='podman' and os.environ['UNIT_COMPLETION_RESULT']=='success' and os.environ['CLEANUP_RESULT']=='success','quadlet_authenticated_completion_evidence':os.environ['BASEHARBOR_CONNECTOR_RUNTIME_KIND']=='podman' and os.environ['ENROLLMENT_RESULT']=='success' and os.environ['CLEANUP_RESULT']=='success','podman_owned_data_reset_evidence':os.environ['BASEHARBOR_CONNECTOR_RUNTIME_KIND']=='podman' and os.environ['ENROLLMENT_RESULT']=='success' and os.environ['CLEANUP_RESULT']=='success','quadlet_managed_start_evidence':os.environ['BASEHARBOR_CONNECTOR_RUNTIME_KIND']=='podman' and os.environ['ENROLLMENT_RESULT']=='success' and os.environ['CLEANUP_RESULT']=='success','quadlet_init_graph_evidence':os.environ['BASEHARBOR_CONNECTOR_RUNTIME_KIND']=='podman' and os.environ['ENROLLMENT_RESULT']=='success' and os.environ['CLEANUP_RESULT']=='success','application_engine_evidence':os.environ['ENROLLMENT_RESULT']=='success' and os.environ['CLEANUP_RESULT']=='success','application_lifecycle_evidence':False,'scope':'actual Keycloak operator OIDC/protected initial and renewal grants/denials/OpenBao/PostgreSQL CSR exchange/outbound mTLS/local-key renewal/CA overlap and retirement/persisted revocation/Core-bound immutable project apply-repair-destroy/foreign preservation/native inventory and bounded exec','release_eligible':False}
+          pathlib.Path('enrollment-receipt.json').write_text(json.dumps(result,indent=2)+'\n')
+          PY
+      - uses: actions/upload-artifact@v6
+        if: always()
+        with:
+          name: connector-managed-enrollment-${{ matrix.runtime }}
+          path: |
+            enrollment-receipt.json
+            ${{ runner.temp }}/enrollment.log
+            ${{ runner.temp }}/unit-completion.log
+          if-no-files-found: error

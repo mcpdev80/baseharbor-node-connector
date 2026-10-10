@@ -17,9 +17,11 @@ func TestParseConfigDerivesStableIdentityAndPrivatePaths(t *testing.T) {
 
 	var stderr bytes.Buffer
 	cfg, err := parseConfig([]string{
+		"--tenant-id", "11111111-1111-4111-8111-111111111111",
 		"--core", "core.example:9443",
 		"--target-id", "edge-a",
 		"--node-id", "node-1",
+		"--runtime", "podman",
 	}, &stderr)
 	if err != nil {
 		t.Fatal(err)
@@ -27,7 +29,10 @@ func TestParseConfigDerivesStableIdentityAndPrivatePaths(t *testing.T) {
 	if cfg.ServerName != "core.example" {
 		t.Fatalf("server name = %q", cfg.ServerName)
 	}
-	if cfg.NodeIdentity != "spiffe://baseharbor/target/edge-a/node/node-1" {
+	if cfg.Runtime != "podman" {
+		t.Fatal("explicit enrolled runtime was lost")
+	}
+	if cfg.NodeIdentity != "spiffe://baseharbor/platform/connectors/11111111-1111-4111-8111-111111111111/edge-a/node-1" {
 		t.Fatalf("node identity = %q", cfg.NodeIdentity)
 	}
 	if !strings.HasSuffix(cfg.PrivateKeyFile, filepath.Join("identity", "node.key")) {
@@ -39,6 +44,7 @@ func TestParseConfigRejectsAmbiguousIdentitySegments(t *testing.T) {
 	t.Setenv("XDG_DATA_HOME", t.TempDir())
 	var stderr bytes.Buffer
 	_, err := parseConfig([]string{
+		"--tenant-id", "11111111-1111-4111-8111-111111111111",
 		"--core", "core.example:9443",
 		"--target-id", "../escape",
 		"--node-id", "node-1",
@@ -68,6 +74,20 @@ func TestNeedsEnrollmentRequiresAllIdentityMaterial(t *testing.T) {
 	}
 	if !needsEnrollment(testTLSFiles(files)) {
 		t.Fatal("missing identity material did not require enrollment")
+	}
+}
+
+func TestCertificateRenewalRequiresExplicitAuthorizationExchange(t *testing.T) {
+	t.Setenv("XDG_DATA_HOME", t.TempDir())
+	t.Setenv("BASEHARBOR_CONNECTOR_BOOTSTRAP_URL", "")
+	base := []string{"--tenant-id", "11111111-1111-4111-8111-111111111111", "--core", "core.example:9443",
+		"--target-id", "edge-a", "--node-id", "node-a", "--renew-certificate"}
+	if _, err := parseConfig(base, &bytes.Buffer{}); err == nil {
+		t.Fatal("renewal silently reused the established session instead of a fresh authorization")
+	}
+	cfg, err := parseConfig(append(base, "--bootstrap-url", "https://core.example/api/v1/connectors/enroll"), &bytes.Buffer{})
+	if err != nil || !cfg.RenewCertificate || cfg.NodeID != "node-a" || cfg.TargetID != "edge-a" {
+		t.Fatal("renewal changed stable enrollment identity", err)
 	}
 }
 

@@ -69,8 +69,8 @@ func (r *streamReplayRegistry) resume(streamID string, after uint64) ([]targetac
 	if !ok {
 		return nil, false, errors.New("stream replay state was not found")
 	}
-	if stream.terminal && !stream.closed {
-		return nil, false, errors.New("live terminal sessions cannot be reattached")
+	if stream.terminal {
+		return nil, false, errors.New("terminal sessions cannot be resumed or replayed")
 	}
 	if stream.active && !stream.closed {
 		return nil, false, errors.New("stream is still attached to another transport")

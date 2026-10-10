@@ -1,0 +1,303 @@
+[
+  {
+    "record": "hello",
+    "wire": {
+      "contract_versions": [
+        "baseharbor.target-access/v1"
+      ],
+      "protocol_versions": [
+        "1"
+      ],
+      "node": {
+        "tenant_id": "11111111-1111-4111-8111-111111111111",
+        "node_id": "node-a",
+        "target_id": "lab",
+        "runtime": "docker",
+        "identity": "spiffe://baseharbor/platform/connectors/11111111-1111-4111-8111-111111111111/lab/node-a"
+      }
+    }
+  },
+  {
+    "record": "capabilities",
+    "wire": {
+      "contract_version": "baseharbor.target-access/v1",
+      "protocol_version": "1",
+      "node": {
+        "tenant_id": "11111111-1111-4111-8111-111111111111",
+        "node_id": "node-a",
+        "target_id": "lab",
+        "runtime": "docker",
+        "identity": "spiffe://baseharbor/platform/connectors/11111111-1111-4111-8111-111111111111/lab/node-a"
+      },
+      "capabilities": [
+        {
+          "name": "runtime.detect",
+          "available": true
+        },
+        {
+          "name": "runtime.terminal",
+          "available": false,
+          "detail": "Fixture only: terminal unavailable"
+        }
+      ]
+    }
+  },
+  {
+    "record": "request",
+    "wire": {
+      "contract_version": "baseharbor.target-access/v1",
+      "protocol_version": "1",
+      "request_id": "request-fixture-a",
+      "correlation_id": "execution-fixture-a",
+      "target_id": "lab",
+      "operation": "runtime.container.stop",
+      "issued_at": "2026-10-06T02:00:00Z",
+      "deadline_at": "2026-10-06T02:05:00Z",
+      "payload": {
+        "resource_id": "owned-resource-a"
+      }
+    }
+  },
+  {
+    "record": "response",
+    "wire": {
+      "contract_version": "baseharbor.target-access/v1",
+      "protocol_version": "1",
+      "request_id": "request-fixture-a",
+      "correlation_id": "execution-fixture-a",
+      "success": true,
+      "result": null
+    }
+  },
+  {
+    "record": "response",
+    "wire": {
+      "contract_version": "baseharbor.target-access/v1",
+      "protocol_version": "1",
+      "request_id": "request-fixture-a",
+      "correlation_id": "execution-fixture-a",
+      "success": false,
+      "error": {
+        "code": "target_mismatch",
+        "message": "Request target differs from the authenticated node binding.",
+        "retryable": false
+      }
+    }
+  },
+  {
+    "record": "cancel",
+    "wire": {
+      "contract_version": "baseharbor.target-access/v1",
+      "protocol_version": "1",
+      "request_id": "request-fixture-a",
+      "correlation_id": "execution-fixture-a",
+      "cancel": true
+    }
+  },
+  {
+    "record": "bootstrap_authorization",
+    "wire": {
+      "token": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "nonce": "QQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQ",
+      "expires_at": "2026-10-06T02:05:00Z"
+    }
+  },
+  {
+    "record": "stream_open",
+    "wire": {
+      "contract_version": "baseharbor.target-access/v1",
+      "protocol_version": "1",
+      "stream_id": "stream-fixture-a",
+      "correlation_id": "execution-fixture-a",
+      "target_id": "lab",
+      "resource_id": "owned-resource-a",
+      "kind": "terminal",
+      "deadline_at": "2026-10-06T02:05:00Z",
+      "terminal": {
+        "rows": 24,
+        "cols": 80,
+        "argv": [
+          "/bin/sh"
+        ]
+      }
+    }
+  },
+  {
+    "record": "stream_event",
+    "wire": {
+      "contract_version": "baseharbor.target-access/v1",
+      "protocol_version": "1",
+      "stream_id": "stream-fixture-a",
+      "correlation_id": "execution-fixture-a",
+      "sequence": 1,
+      "observed_at": "2026-10-06T02:00:00Z",
+      "type": "ready"
+    }
+  },
+  {
+    "record": "stream_event",
+    "wire": {
+      "contract_version": "baseharbor.target-access/v1",
+      "protocol_version": "1",
+      "stream_id": "stream-fixture-a",
+      "correlation_id": "execution-fixture-a",
+      "sequence": 2,
+      "observed_at": "2026-10-06T02:00:00Z",
+      "type": "data",
+      "data": "aGVsbG8K"
+    }
+  },
+  {
+    "record": "stream_event",
+    "wire": {
+      "contract_version": "baseharbor.target-access/v1",
+      "protocol_version": "1",
+      "stream_id": "stream-fixture-a",
+      "correlation_id": "execution-fixture-a",
+      "sequence": 3,
+      "observed_at": "2026-10-06T02:00:00Z",
+      "type": "exit",
+      "exit_code": 7
+    }
+  },
+  {
+    "record": "request",
+    "wire": {
+      "contract_version": "baseharbor.target-access/v1",
+      "protocol_version": "1",
+      "request_id": "bundle-fixture-a",
+      "correlation_id": "execution-fixture-a",
+      "target_id": "lab",
+      "operation": "artifact.bundle.stage",
+      "issued_at": "2026-10-06T02:00:00Z",
+      "deadline_at": "2026-10-06T02:05:00Z",
+      "payload": {
+        "bundle_id": "bundle-fixture-a",
+        "files": [
+          {
+            "path": "compose.yaml",
+            "sha256": "ca978112ca1bbdcafac231b39a23dc4da786eff8147c4e72b9807785afee48bb",
+            "data": "YQ==",
+            "mode": 420
+          }
+        ]
+      }
+    }
+  },
+  {
+    "record": "request",
+    "wire": {
+      "contract_version": "baseharbor.target-access/v1",
+      "protocol_version": "1",
+      "request_id": "quadlet-fixture-a",
+      "correlation_id": "execution-fixture-a",
+      "target_id": "lab",
+      "operation": "runtime.quadlet.apply",
+      "issued_at": "2026-10-06T02:00:00Z",
+      "deadline_at": "2026-10-06T02:05:00Z",
+      "payload": {
+        "name": "workload.container",
+        "content": "[Container]\nImage=example/workload:fixture\n[Install]\nWantedBy=default.target\n",
+        "enable": true
+      }
+    }
+  },
+  {
+    "record": "request",
+    "wire": {
+      "contract_version": "baseharbor.target-access/v1",
+      "protocol_version": "1",
+      "request_id": "request-quadlet-bundle",
+      "correlation_id": "execution-fixture-a",
+      "target_id": "lab",
+      "operation": "runtime.quadlet.apply",
+      "issued_at": "2026-10-06T02:00:00Z",
+      "deadline_at": "2026-10-06T02:05:00Z",
+      "payload": {
+        "name": "workload.container",
+        "content": "[Container]\nImage=example/image:fixture\nVolume=@BASEHARBOR_BUNDLE@/tls/key.pem:/run/key.pem:ro\n",
+        "enable": true,
+        "project_directory": "bundles/.object-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      }
+    }
+  },
+  {
+    "record": "request",
+    "wire": {
+      "contract_version": "baseharbor.target-access/v1",
+      "protocol_version": "1",
+      "request_id": "request-quadlet-completion",
+      "correlation_id": "execution-fixture-a",
+      "target_id": "lab",
+      "operation": "runtime.quadlet.verify-completion",
+      "issued_at": "2026-10-06T02:00:00Z",
+      "deadline_at": "2026-10-06T02:05:00Z",
+      "payload": {
+        "name": "workload.container",
+        "content": "[Container]\nImage=example/image:fixture\nVolume=@BASEHARBOR_BUNDLE@/tls/key.pem:/run/key.pem:ro\n",
+        "project_directory": "bundles/.object-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      }
+    }
+  },
+  {
+    "record": "request",
+    "wire": {
+      "contract_version": "baseharbor.target-access/v1",
+      "protocol_version": "1",
+      "request_id": "request-quadlet-core-managed",
+      "correlation_id": "execution-fixture-a",
+      "target_id": "lab",
+      "operation": "runtime.quadlet.apply",
+      "issued_at": "2026-10-06T02:00:00Z",
+      "deadline_at": "2026-10-06T02:05:00Z",
+      "payload": {
+        "name": "workload.container",
+        "content": "[Container]\nImage=example/image:fixture\nVolume=@BASEHARBOR_BUNDLE@/tls/key.pem:/run/key.pem:ro\n",
+        "enable": true,
+        "project_directory": "bundles/.object-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "autostart": false
+      }
+    }
+  },
+  {
+    "record": "request",
+    "wire": {
+      "contract_version": "baseharbor.target-access/v1",
+      "protocol_version": "1",
+      "request_id": "request-quadlet-volume-reset",
+      "correlation_id": "execution-fixture-a",
+      "target_id": "lab",
+      "operation": "runtime.quadlet.reset-volume",
+      "issued_at": "2026-10-06T02:00:00Z",
+      "deadline_at": "2026-10-06T02:05:00Z",
+      "payload": {
+        "name": "owned.volume",
+        "content": "[Volume]\nVolumeName=owned-data\nLabel=com.docker.compose.project=owned\n",
+        "project_directory": "bundles/.object-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      }
+    }
+  },
+  {
+    "record": "request",
+    "wire": {
+      "contract_version": "baseharbor.target-access/v1",
+      "protocol_version": "1",
+      "request_id": "request-compose-phase",
+      "correlation_id": "execution-fixture-a",
+      "target_id": "lab",
+      "operation": "runtime.compose.apply",
+      "issued_at": "2026-10-06T02:00:00Z",
+      "deadline_at": "2026-10-06T02:05:00Z",
+      "payload": {
+        "project_directory": "bundles/.object-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "files": [
+          "bundles/.object-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/compose.yaml"
+        ],
+        "services": [
+          "postgres"
+        ],
+        "timeout_seconds": 90
+      }
+    }
+  }
+]

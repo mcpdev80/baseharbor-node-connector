@@ -13,23 +13,33 @@ import (
 )
 
 type Config struct {
-	StagingRoot string
-	QuadletRoot string
+	Runtime            runtime.Kind
+	StagingRoot        string
+	TransportStateRoot string
+	QuadletRoot        string
 }
 
 type Service struct {
-	Runtime      runtime.Detection
-	Capabilities []capability.Descriptor
-	Observation  *container.Adapter
-	Inventory    *container.Resources
-	Realizer     *container.Lifecycle
-	Compose      *compose.Adapter
-	Quadlet      *quadlet.Manager
-	Staging      *fssecure.Root
+	Runtime            runtime.Detection
+	Capabilities       []capability.Descriptor
+	Observation        *container.Adapter
+	Inventory          *container.Resources
+	Realizer           *container.Lifecycle
+	Compose            *compose.Adapter
+	Quadlet            *quadlet.Manager
+	Staging            *fssecure.Root
+	TransportStateRoot string
 }
 
 func Open(ctx context.Context, cfg Config) (*Service, error) {
-	detection, err := runtime.NewDetector().Detect(ctx)
+	detector := runtime.NewDetector()
+	var detection runtime.Detection
+	var err error
+	if cfg.Runtime == "" {
+		detection, err = detector.Detect(ctx)
+	} else {
+		detection, err = detector.DetectKind(ctx, cfg.Runtime)
+	}
 	if err != nil {
 		return nil, fmt.Errorf("detect runtime: %w", err)
 	}
@@ -45,15 +55,25 @@ func Open(ctx context.Context, cfg Config) (*Service, error) {
 	}
 
 	capabilities := capability.ForRuntime(string(detection.Kind))
+	if detection.Kind == runtime.Podman && !quadletManager.Available(ctx) {
+		for i := range capabilities {
+			switch capabilities[i].Name {
+			case capability.QuadletApply, capability.QuadletRemove, capability.QuadletEnable, capability.QuadletDisable, capability.QuadletCompletion, capability.QuadletVolumeReset:
+				capabilities[i].Available = false
+				capabilities[i].Detail = "A reachable systemd user manager is required"
+			}
+		}
+	}
 
 	return &Service{
-		Runtime:      detection,
-		Capabilities: capabilities,
-		Observation:  container.NewAdapter(detection.Kind),
-		Inventory:    container.NewResources(detection.Kind),
-		Realizer:     container.NewLifecycle(detection.Kind),
-		Compose:      compose.NewAdapter(detection.Kind, staging),
-		Quadlet:      quadletManager,
-		Staging:      staging,
+		Runtime:            detection,
+		Capabilities:       capabilities,
+		Observation:        container.NewAdapter(detection.Kind),
+		Inventory:          container.NewResources(detection.Kind),
+		Realizer:           container.NewLifecycle(detection.Kind),
+		Compose:            compose.NewAdapter(detection.Kind, staging),
+		Quadlet:            quadletManager,
+		Staging:            staging,
+		TransportStateRoot: cfg.TransportStateRoot,
 	}, nil
 }
