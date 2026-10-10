@@ -1,5 +1,17 @@
 # Deployment boundary
 
+## BaseHarbor v0.4.24 compatibility
+
+The v0.4.24 code candidate has completed joint native Docker and rootless Podman acceptance and the full Core pre-release evidence check. Publication remains pending. `integration-candidate.json` records the immutable tested code dependencies; documentation changes do not replace these source bindings.
+
+The accepted workflows include Core setup, managed Node enrollment, outbound mTLS, renewal/revocation and reconnect, remote application plan/apply/status/doctor/destroy, real Console OIDC/RBAC, events, logs, terminal and credential/CA rotation. Core remains authoritative for state, policy, provider placement and reconciliation. Kubernetes/OpenShift use their native APIs and do not require a Node Connector.
+
+See [Core release status](https://github.com/mcpdev80/baseharbor/pull/837) and the [Core documentation](https://mcpdev80.github.io/baseharbor/). Source tests and preview fixtures remain separate from native integration acceptance.
+
+## Historical implementation and qualification records
+
+The records below describe earlier implementation stages. Their pending-coverage statements describe those stages; the current v0.4.24 acceptance scope is stated above. API and ownership restrictions continue to apply.
+
 The Node Connector can realize deployments for remote Docker/Podman targets, but it never decides deployment intent.
 
 Configure `--runtime docker` or `--runtime podman` (or

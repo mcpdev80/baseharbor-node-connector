@@ -6,6 +6,15 @@ Optional Target Access Provider implementation for remote non-Kubernetes targets
 
 The Node Connector is **not** a BaseHarbor control plane, not a Runtime Provider and not an autonomous agent.
 
+## BaseHarbor v0.4.24 compatibility
+
+The v0.4.24 code candidate has completed joint native Docker and rootless Podman acceptance and the full Core pre-release evidence check. Publication remains pending. `integration-candidate.json` records the immutable tested code dependencies; documentation changes do not replace these source bindings.
+
+The accepted workflows include Core setup, managed Node enrollment, outbound mTLS, renewal/revocation and reconnect, remote application plan/apply/status/doctor/destroy, real Console OIDC/RBAC, events, logs, terminal and credential/CA rotation. Core remains authoritative for state, policy, provider placement and reconciliation. Kubernetes/OpenShift use their native APIs and do not require a Node Connector.
+
+See [Core release status](https://github.com/mcpdev80/baseharbor/pull/837) and the [Core documentation](https://mcpdev80.github.io/baseharbor/). Source tests and preview fixtures remain separate from native integration acceptance.
+
+
 ## Boundary
 
 ```text
