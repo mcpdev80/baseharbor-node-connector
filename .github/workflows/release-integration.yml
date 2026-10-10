@@ -348,6 +348,7 @@ jobs:
         retention-days: 90
     strategy:
       fail-fast: false
+      max-parallel: 1
       matrix:
         include:
         - runtime: docker
