@@ -1,8 +1,9 @@
-name: "Release Integration \xB7 Connector"
+name: Release Integration · Connector
 'on':
   push:
     branches:
     - work/v0.4.24-integrations-docs
+    - work/v0.4.25-integrations-docs
 permissions:
   contents: read
   actions: read
@@ -24,10 +25,11 @@ jobs:
     - name: Resolve exact Core from trusted push branch
       id: core
       shell: bash
-      run: "set -euo pipefail\n[[ \"$GITHUB_REF_NAME\" == work/v0.4.24-integrations-docs ]]\npython3 - <<'PYTHON' >> \"$GITHUB_OUTPUT\"\
-        \nimport json,re\nwith open('integration-candidate.json') as f: candidate=json.load(f)\nassert candidate['schema']=='baseharbor.ecosystem-candidate/v1'\
-        \ and candidate['release']=='0.4.24'\nfor name in ['core','console']:\n assert re.fullmatch('[0-9a-f]{40}',candidate[name])\n\
-        \ print(name+'='+candidate[name])\nPYTHON\n"
+      run: "set -euo pipefail\npython3 - <<'PYTHON' >> \"$GITHUB_OUTPUT\"\nimport json, os, re\nallowed = {'work/v0.4.24-integrations-docs':\
+        \ '0.4.24', 'work/v0.4.25-integrations-docs': '0.4.25'}\nrelease = allowed[os.environ['GITHUB_REF_NAME']]\nwith open('integration-candidate.json')\
+        \ as f: candidate = json.load(f)\nassert candidate['schema'] == 'baseharbor.ecosystem-candidate/v1' and candidate['release']\
+        \ == release\nfor name in ['core', 'console']:\n    assert re.fullmatch('[0-9a-f]{40}', candidate[name])\n    print(name\
+        \ + '=' + candidate[name])\nPYTHON\n"
     - uses: actions/checkout@v7.0.1
       with:
         repository: mcpdev80/baseharbor
@@ -53,11 +55,11 @@ jobs:
 
         '
   qualification:
-    name: "Integration \xB7 ${{ matrix.gate }}"
+    name: Integration · ${{ matrix.gate }}
     runs-on: ${{ matrix.runtime == 'podman' && 'ubuntu-26.04' || 'ubuntu-latest' }}
     timeout-minutes: 60
     env:
-      BASEHARBOR_API_DATABASE_URL: postgres://postgres:isolated-browser-password@127.0.0.1:35432/baseharbor_browser?sslmode=disable
+      BASEHARBOR_API_DATABASE_URL: postgres://postgres:${{ github.run_id }}-${{ github.run_attempt }}-isolated-ci@127.0.0.1:35432/baseharbor_browser?sslmode=disable
       BASEHARBOR_BROWSER_CORE_COMMIT: ${{ needs.resolve.outputs.core }}
       BASEHARBOR_BROWSER_CORE_SOURCE: ${{ github.workspace }}/.browser-console-source/.browser-core-source
       NEXT_PUBLIC_BASEHARBOR_API_URL: https://localhost:8443
@@ -68,7 +70,7 @@ jobs:
       BASEHARBOR_CONNECTOR_RUNTIME_KIND: ${{ matrix.runtime }}
       BASEHARBOR_NATIVE_CONNECTOR_ENROLLMENT: '1'
       BASEHARBOR_TEST_NATIVE_OPENBAO: '1'
-      BASEHARBOR_TEST_OPENBAO_STORAGE_URL: postgres://baseharbor_fixture:fixture-native-pki-only@127.0.0.1:5432/baseharbor_native_pki_fixture?sslmode=disable
+      BASEHARBOR_TEST_OPENBAO_STORAGE_URL: postgres://baseharbor_fixture:${{ github.run_id }}-${{ github.run_attempt }}-isolated-ci@127.0.0.1:5432/baseharbor_native_pki_fixture?sslmode=disable
       RELEASE_GATE: ${{ matrix.gate }}
     services:
       postgres:
@@ -76,7 +78,7 @@ jobs:
         env:
           POSTGRES_DB: baseharbor_browser
           POSTGRES_USER: postgres
-          POSTGRES_PASSWORD: isolated-browser-password
+          POSTGRES_PASSWORD: ${{ github.run_id }}-${{ github.run_attempt }}-isolated-ci
         ports:
         - 35432:5432
         options: --health-cmd "pg_isready -U postgres -d baseharbor_browser" --health-interval 5s --health-timeout 3s --health-retries
@@ -258,7 +260,7 @@ jobs:
 
         sudo systemctl start postgresql
 
-        sudo -u postgres psql -v ON_ERROR_STOP=1 -c "CREATE ROLE baseharbor_fixture LOGIN PASSWORD ''fixture-native-pki-only'';"
+        sudo -u postgres psql -v ON_ERROR_STOP=1 -c "CREATE ROLE baseharbor_fixture LOGIN PASSWORD ''$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT-isolated-ci'';"
 
         sudo -u postgres createdb --owner=baseharbor_fixture baseharbor_native_pki_fixture
 

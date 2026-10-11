@@ -1,5 +1,15 @@
 # BaseHarbor Node Connector
 
+## v0.4.25 candidate compatibility
+
+This branch pins the exact Core, Demo and Console candidate in
+`integration-candidate.json`. Native enrollment/mTLS, renewal/revocation,
+remote Application lifecycle and the real Console browser journey must pass
+against this matrix before pre-release readiness is claimed. Source tests
+alone are not that acceptance. See [Core PR #881](https://github.com/mcpdev80/baseharbor/pull/881).
+Product architecture and supported operations remain unchanged.
+
+
 See [release integration records](docs/RELEASE-INTEGRATION.md) for immutable source bindings and native acceptance scope.
 
 Optional Target Access Provider implementation for remote non-Kubernetes targets.
