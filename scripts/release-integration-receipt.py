@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Bind complete native and normal operator HTTP journeys to an Actions origin."""
 import hashlib,json,os,pathlib,re,subprocess,urllib.request
+from http_lifecycle_evidence import validate_http_observations
 
 root=pathlib.Path(os.environ['BASEHARBOR_BROWSER_FIXTURE'])
 output=root/'manifest.json'
@@ -20,7 +21,11 @@ require(source==os.environ['GITHUB_SHA'] and core==os.environ['BASEHARBOR_BROWSE
 require(all(re.fullmatch('[0-9a-f]{40}',value) for value in [source,core,console,demo]),'exact source required')
 candidate=json.loads(pathlib.Path(os.environ['GITHUB_WORKSPACE'],'integration-candidate.json').read_text())
 require(candidate['core']==core and candidate['console']==console and candidate['demo']==demo,'immutable ecosystem candidate differs')
-require(pathlib.Path('.release-demo-source/baseharbor-core.ref').read_text().strip()==core,'Demo Core pin differs')
+# The Demo's default installer pin is source provenance. The trusted immutable
+# matrix above supplies the actual qualification Core; bidirectional Git pins
+# would be circular. All actual checkouts and native receipts still match Core.
+demo_default_core=pathlib.Path('.release-demo-source/baseharbor-core.ref').read_text().strip()
+require(re.fullmatch('[0-9a-f]{40}',demo_default_core),'Demo default Core provenance is not immutable')
 native=json.loads((root/'browser-receipt.json').read_text())
 http=json.loads((root/'remote-http-receipt.json').read_text())
 require(native['schema']=='baseharbor.private-browser-receipt/v1' and native['repository']==repository and native['commit']==console and native['core_commit']==core and native['demo_commit']==demo,'browser source binding differs')
@@ -30,20 +35,23 @@ for flag in ['core_bootstrap_evidence','application_lifecycle_evidence','termina
 steps=set(native['steps'])
 required={
  'oidc-origin-role':['real-keycloak-code-S256-login','actual-Core-binds-browser-origin-to-one-installation','actual-Core-viewer-read-allowed-mutation-and-destruction-denied','real-token-expiry-ends-Console-session-and-Core-admission','actual-Core-rejects-real-issuer-token-with-wrong-audience'],
- 'plan-apply-result-events':['actual-Core-POST-SSE-GET-and-empty-read-model','actual-browser-first-apply-Core-required-explicit-bootstrap-SQL-Secrets-Identity-READY-and-same-application-continuation'],
+ 'plan-apply-result-events':['actual-Core-POST-SSE-GET-and-empty-read-model','actual-browser-plan-bound-provider-confirmations-and-selective-application-READY-without-management-Core','actual-browser-explicit-management-Core-SQL-Secrets-Identity-READY-and-application-preservation'],
  'logs-follow-cancel':['actual-browser-Core-owned-container-logs-read-follow-new-output-cancel-without-replay'],
  'terminal-resize-close':['actual-browser-Core-owned-container-PTY-input-output-resize-exit-and-foreign-actor-denial'],
- 'core-setup':['actual-browser-first-apply-Core-required-explicit-bootstrap-SQL-Secrets-Identity-READY-and-same-application-continuation'],
+ 'core-setup':['actual-browser-plan-bound-provider-confirmations-and-selective-application-READY-without-management-Core','actual-browser-explicit-management-Core-SQL-Secrets-Identity-READY-and-application-preservation'],
  'application-lifecycle':['actual-browser-Core-application-plan-status-doctor-repair-explicit-destroy-and-foreign-issuer-preservation','actual-browser-authoritative-status-ready-doctor-healthy-before-and-after-rotation'],
  'production-rotation':['actual-browser-approved-production-credential-CA-rotation-changed-native-CA-and-post-rotation-application-status-doctor'],
 }
 for journey in required.values(): require(set(journey)<=steps,'complete browser steps missing')
 require('actual-operator-HTTP-production-enrollment-outbound-Connector-application-plan-apply-status-doctor-immutable-repair-destroy-and-owned-cleanup' in steps,'normal remote HTTP journey missing')
+require('actual-operator-HTTP-default-remote-retirement-preserves-publication-owner-original-TLS-data-credentials-and-immutable-reactivation' in steps,'retained remote reactivation missing')
+require('actual-operator-HTTP-node-disconnect-two-current-acknowledgements-revokes-certificate-and-preserves-owner' in steps,'normal operator disconnect missing')
 binary=pathlib.Path(os.environ['BASEHARBOR_TEST_CONNECTOR_BIN'])
 build=hashlib.sha256(binary.read_bytes()).hexdigest()
 require(http['schema']=='baseharbor.remote-http-journey/v1' and http['core_commit']==core and http['connector_binary_sha256']==build and http['runtime']==os.environ['BASEHARBOR_CONNECTOR_RUNTIME_KIND'],'HTTP source binding differs')
 require(http['result']=='success' and http['cleanup_result']=='success' and http['production_authority'] is True,'normal HTTP qualification failed')
-require({row['operation'] for row in http['observations']}=={'plan','apply','status','doctor','repair','destroy'} and all(row['state']=='succeeded' for row in http['observations']),'complete HTTP lifecycle not observed')
+validate_http_observations(http['observations'])
+require(http.get('disconnect')=={'revoked':True,'certificate_revoked':True,'owner_preserved':True,'data_deleted':False},'normal operator disconnect disposition differs')
 log=pathlib.Path(os.environ['RUNNER_TEMP'],'enrollment.log').read_text()
 for marker in [
  'actual Keycloak operator authorization/denials, Connector managed enrollment, local-key renewal, CA overlap/retirement, native typed exec and persisted revocation passed',
@@ -61,6 +69,8 @@ else:
 # evidence so the joint run can satisfy both consumers without another journey.
 qualifications.update({name:True for name in required})
 qualifications['owned-cleanup']=True
+qualifications['retained-remote-reactivation']=True
+qualifications['owned-disconnect']=True
 run=os.environ['GITHUB_RUN_ID']; attempt=int(os.environ['GITHUB_RUN_ATTEMPT'])
 require(str(native['run_id'])==run and int(native['run_attempt'])==attempt and attempt>0,'native origin differs')
 request=urllib.request.Request(f'https://api.github.com/repos/{repository}/actions/runs/{run}/jobs?per_page=100&filter=latest',headers={'Authorization':'Bearer '+os.environ['GH_TOKEN'],'Accept':'application/vnd.github+json','X-GitHub-Api-Version':'2022-11-28'})
