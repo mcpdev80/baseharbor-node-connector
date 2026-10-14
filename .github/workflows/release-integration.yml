@@ -352,15 +352,9 @@ jobs:
       fail-fast: false
       max-parallel: 2
       matrix:
-        include:
-        - runtime: docker
-          gate: integration/docker/remote-target
-          artifact: integration-docker-remote-target
-        - runtime: podman
-          gate: integration/podman/remote-target
-          artifact: integration-podman-remote-target
+        include: ${{ fromJSON(contains(github.event.head_commit.message, '[ecosystem-docker-runtime]') && '[{"runtime":"docker","gate":"integration/docker/remote-target","artifact":"integration-docker-remote-target"}]' || contains(github.event.head_commit.message, '[ecosystem-podman-runtime]') && '[{"runtime":"podman","gate":"integration/podman/remote-target","artifact":"integration-podman-remote-target"}]' || '[{"runtime":"docker","gate":"integration/docker/remote-target","artifact":"integration-docker-remote-target"},{"runtime":"podman","gate":"integration/podman/remote-target","artifact":"integration-podman-remote-target"}]') }}
     defaults:
       run:
         working-directory: .browser-console-source
     needs: resolve
-    if: contains(github.event.head_commit.message, '[ecosystem-runtime]')
+    if: contains(github.event.head_commit.message, '[ecosystem-runtime]') || contains(github.event.head_commit.message, '[ecosystem-docker-runtime]') || contains(github.event.head_commit.message, '[ecosystem-podman-runtime]')
