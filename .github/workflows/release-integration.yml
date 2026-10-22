@@ -3,6 +3,8 @@ name: "Release Integration \xB7 Connector"
   push:
     branches:
     - work/v0.4.24-integrations-docs
+    - work/v0.4.25-integrations-docs
+    - work/v0.4.26-integrations-docs
 permissions:
   contents: read
   actions: read
@@ -24,9 +26,9 @@ jobs:
     - name: Resolve exact Core from trusted push branch
       id: core
       shell: bash
-      run: "set -euo pipefail\n[[ \"$GITHUB_REF_NAME\" == work/v0.4.24-integrations-docs ]]\npython3 - <<'PYTHON' >> \"$GITHUB_OUTPUT\"\
+      run: "set -euo pipefail\n[[ \"$GITHUB_REF_NAME\" == work/v0.4.24-integrations-docs || \"$GITHUB_REF_NAME\" == work/v0.4.25-integrations-docs || \"$GITHUB_REF_NAME\" == work/v0.4.26-integrations-docs ]]\npython3 - <<'PYTHON' >> \"$GITHUB_OUTPUT\"\
         \nimport json,re\nwith open('integration-candidate.json') as f: candidate=json.load(f)\nassert candidate['schema']=='baseharbor.ecosystem-candidate/v1'\
-        \ and candidate['release']=='0.4.24'\nfor name in ['core','console']:\n assert re.fullmatch('[0-9a-f]{40}',candidate[name])\n\
+        \ and candidate['release'] in ('0.4.24','0.4.25','0.4.26')\nfor name in ['core','console']:\n assert re.fullmatch('[0-9a-f]{40}',candidate[name])\n\
         \ print(name+'='+candidate[name])\nPYTHON\n"
     - uses: actions/checkout@v7.0.1
       with:
