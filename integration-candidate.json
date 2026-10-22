@@ -1,7 +1,7 @@
 {
   "schema": "baseharbor.ecosystem-candidate/v1",
   "release": "0.4.26",
-  "core": "d5417bde378b130b831d847e7d6ced5322d4997a",
-  "demo": "PENDING-FREEZE",
-  "console": "PENDING-FREEZE"
+  "core": "2adae47afddc299d06dbc34eb16a8e011c14b6dc",
+  "demo": "PENDING-FREEZE-DEMO: replace with the v0.4.26 frozen Demo SHA once Demo core-pin PR is merged and Demo main D exists (chore/v0426-core-pin, q18)",
+  "console": "PENDING-FREEZE-DEMO: replace with the v0.4.26 frozen Console SHA once Console U is built from D (stays PENDING until Demo D exists)"
 }
