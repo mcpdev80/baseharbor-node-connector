@@ -30,10 +30,10 @@ for flag in ['core_bootstrap_evidence','application_lifecycle_evidence','termina
 steps=set(native['steps'])
 required={
  'oidc-origin-role':['real-keycloak-code-S256-login','actual-Core-binds-browser-origin-to-one-installation','actual-Core-viewer-read-allowed-mutation-and-destruction-denied','real-token-expiry-ends-Console-session-and-Core-admission','actual-Core-rejects-real-issuer-token-with-wrong-audience'],
- 'plan-apply-result-events':['actual-Core-POST-SSE-GET-and-empty-read-model','actual-browser-first-apply-Core-required-explicit-bootstrap-SQL-Secrets-Identity-READY-and-same-application-continuation'],
+ 'plan-apply-result-events':['actual-Core-POST-SSE-GET-and-empty-read-model','actual-browser-unconsented-apply-no-writes-explicit-Core-setup-SQL-Secrets-Identity-READY-and-plan-bound-application-consent'],
  'logs-follow-cancel':['actual-browser-Core-owned-container-logs-read-follow-new-output-cancel-without-replay'],
  'terminal-resize-close':['actual-browser-Core-owned-container-PTY-input-output-resize-exit-and-foreign-actor-denial'],
- 'core-setup':['actual-browser-first-apply-Core-required-explicit-bootstrap-SQL-Secrets-Identity-READY-and-same-application-continuation'],
+ 'core-setup':['actual-browser-unconsented-apply-no-writes-explicit-Core-setup-SQL-Secrets-Identity-READY-and-plan-bound-application-consent'],
  'application-lifecycle':['actual-browser-Core-application-plan-status-doctor-repair-explicit-destroy-and-foreign-issuer-preservation','actual-browser-authoritative-status-ready-doctor-healthy-before-and-after-rotation'],
  'production-rotation':['actual-browser-approved-production-credential-CA-rotation-changed-native-CA-and-post-rotation-application-status-doctor'],
 }
@@ -43,6 +43,7 @@ binary=pathlib.Path(os.environ['BASEHARBOR_TEST_CONNECTOR_BIN'])
 build=hashlib.sha256(binary.read_bytes()).hexdigest()
 require(http['schema']=='baseharbor.remote-http-journey/v1' and http['core_commit']==core and http['connector_binary_sha256']==build and http['runtime']==os.environ['BASEHARBOR_CONNECTOR_RUNTIME_KIND'],'HTTP source binding differs')
 require(http['result']=='success' and http['cleanup_result']=='success' and http['production_authority'] is True,'normal HTTP qualification failed')
+require(http.get('no_write_consent_refusals') is True and {row['operation'] for row in http.get('refusals',[])}=={'apply','destroy'} and len(http['refusals'])==2 and all(row['state']=='failed' and row['code']=='approval_required' and row['cause'] in {'impact-confirmation-required','data-deletion-consent-required'} for row in http['refusals']),'plan-bound HTTP consent refusals and no-write evidence missing')
 require({row['operation'] for row in http['observations']}=={'plan','apply','status','doctor','repair','destroy'} and all(row['state']=='succeeded' for row in http['observations']),'complete HTTP lifecycle not observed')
 log=pathlib.Path(os.environ['RUNNER_TEMP'],'enrollment.log').read_text()
 for marker in [
