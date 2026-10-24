@@ -1,7 +1,7 @@
 {
   "schema": "baseharbor.ecosystem-candidate/v1",
   "release": "0.4.26",
-  "core": "2adae47afddc299d06dbc34eb16a8e011c14b6dc",
-  "demo": "896dc3cb68a8c9b9585940c4696410de5a338c52",
-  "console": "PENDING-FREEZE-DEMO: replace with the v0.4.26 frozen Console SHA once Console U is built from D (stays PENDING until Console U exists)"
+  "core": "3e27497b4ef7b567858ba646bc3071bee37d19bd",
+  "demo": "03396c805369e61d2e0745d00f78c8add809e2e0",
+  "console": "645dda54c0382b897e1cb709413f88b5827c38ce"
 }
