@@ -8,6 +8,15 @@ on:
       - 'runtime-validation/enrollment/**'
   pull_request:
   workflow_dispatch:
+    inputs:
+      runtime:
+        description: Runtime gate to exercise on the dispatched ref
+        required: true
+        default: podman
+        type: choice
+        options:
+        - podman
+        - docker
 permissions:
   contents: read
 concurrency:
@@ -66,7 +75,7 @@ jobs:
           if-no-files-found: error
 
   transport:
-    if: github.event_name == 'push' && startsWith(github.ref_name, 'runtime-validation/transport/')
+    if: (github.event_name == 'push' && startsWith(github.ref_name, 'runtime-validation/transport/')) || (github.event_name == 'workflow_dispatch' && inputs.runtime == 'podman')
     name: Actual encrypted transport · ${{ matrix.runtime }}
     runs-on: ${{ matrix.runtime == 'podman' && 'ubuntu-26.04' || 'ubuntu-latest' }}
     timeout-minutes: 20
@@ -74,7 +83,7 @@ jobs:
       fail-fast: false
       max-parallel: 2
       matrix:
-        runtime: ${{ fromJSON(contains(github.ref_name, '/podman/') && '["podman"]' || '["docker","podman"]') }}
+        runtime: ${{ fromJSON(github.event_name == 'workflow_dispatch' && format('["{0}"]', inputs.runtime) || (contains(github.ref_name, '/podman/') && '["podman"]' || '["docker","podman"]')) }}
     env:
       BASEHARBOR_CONNECTOR_RUNTIME_ACCEPTANCE: 'true'
       BASEHARBOR_CONNECTOR_RUNTIME_KIND: ${{ matrix.runtime }}
@@ -84,18 +93,44 @@ jobs:
         with:
           go-version: '1.26.2'
           cache: false
-      - name: Prepare rootless Podman
+      - name: Prepare Podman (GitHub-hosted)
         if: matrix.runtime == 'podman'
         run: |
-          sudo apt-get update
-          sudo apt-get install -y podman
-          uid="$(id -u)"
-          sudo loginctl enable-linger "$(id -un)"
-          sudo systemctl start "user@$uid.service"
-          echo "XDG_RUNTIME_DIR=/run/user/$uid" >> "$GITHUB_ENV"
-          echo "DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/$uid/bus" >> "$GITHUB_ENV"
-          XDG_RUNTIME_DIR="/run/user/$uid" DBUS_SESSION_BUS_ADDRESS="unix:path=/run/user/$uid/bus" systemctl --user show-environment >/dev/null
-          test "$(podman info --format '{{.Host.Security.Rootless}}')" = true
+          set -euo pipefail
+          # GitHub-hosted ubuntu runners cannot provide a rootless Podman user
+          # session: user namespaces are blocked by the runner hardening (empirical:
+          # unshare --user -> /proc/self/uid_map: Operation not permitted, e.g. run
+          # 41255597778), even after a sudo sysctl lift. The loginctl-linger /
+          # systemctl --user show-environment dance therefore runs ONLY on a
+          # self-hosted runner that provides a user session; on GitHub-hosted
+          # runners the preinstalled rootful/cgroupfs podman is used directly.
+          if ! command -v podman >/dev/null 2>&1; then
+            # ubuntu-latest ships podman preinstalled; install only as fallback.
+            # No rootless setup: impossible and not needed on GH-hosted runners.
+            sudo apt-get update
+            sudo apt-get install -y podman
+          fi
+          if [[ "${RUNNER_ENVIRONMENT:-}" == github-hosted ]]; then
+            # GH-hosted cannot provide a user-session service (documented limitation):
+            # exercise podman rootful/cgroupfs instead, which the runner supports.
+            if podman run --rm --pull=always docker.io/library/alpine:3.23 true 2>/dev/null; then
+              echo "::notice::podman GH-hosted mode: default (rootful) OK"
+            elif podman --cgroup-manager=cgroupfs run --rm --pull=always docker.io/library/alpine:3.23 true; then
+              echo "::notice::podman GH-hosted mode: --cgroup-manager=cgroupfs OK"
+            else
+              echo "::error::podman cannot execute containers on this GH-hosted runner"
+              exit 1
+            fi
+            podman info --format 'runtime cgroup_manager={{.Host.CgroupManager}} rootless={{.Host.Security.Rootless}}'
+          else
+            uid="$(id -u)"
+            sudo loginctl enable-linger "$(id -un)"
+            sudo systemctl start "user@$uid.service"
+            echo "XDG_RUNTIME_DIR=/run/user/$uid" >> "$GITHUB_ENV"
+            echo "DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/$uid/bus" >> "$GITHUB_ENV"
+            XDG_RUNTIME_DIR="/run/user/$uid" DBUS_SESSION_BUS_ADDRESS="unix:path=/run/user/$uid/bus" systemctl --user show-environment >/dev/null
+            test "$(podman info --format '{{.Host.Security.Rootless}}')" = true
+          fi
       - name: Checkout immutable public transport harness
         uses: actions/checkout@v7.0.1
         with:
@@ -170,18 +205,44 @@ jobs:
         with:
           go-version: '1.26.2'
           cache: false
-      - name: Prepare rootless Podman
+      - name: Prepare Podman (GitHub-hosted)
         if: matrix.runtime == 'podman'
         run: |
-          sudo apt-get update
-          sudo apt-get install -y podman
-          uid="$(id -u)"
-          sudo loginctl enable-linger "$(id -un)"
-          sudo systemctl start "user@$uid.service"
-          echo "XDG_RUNTIME_DIR=/run/user/$uid" >> "$GITHUB_ENV"
-          echo "DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/$uid/bus" >> "$GITHUB_ENV"
-          XDG_RUNTIME_DIR="/run/user/$uid" DBUS_SESSION_BUS_ADDRESS="unix:path=/run/user/$uid/bus" systemctl --user show-environment >/dev/null
-          test "$(podman info --format '{{.Host.Security.Rootless}}')" = true
+          set -euo pipefail
+          # GitHub-hosted ubuntu runners cannot provide a rootless Podman user
+          # session: user namespaces are blocked by the runner hardening (empirical:
+          # unshare --user -> /proc/self/uid_map: Operation not permitted, e.g. run
+          # 41255597778), even after a sudo sysctl lift. The loginctl-linger /
+          # systemctl --user show-environment dance therefore runs ONLY on a
+          # self-hosted runner that provides a user session; on GitHub-hosted
+          # runners the preinstalled rootful/cgroupfs podman is used directly.
+          if ! command -v podman >/dev/null 2>&1; then
+            # ubuntu-latest ships podman preinstalled; install only as fallback.
+            # No rootless setup: impossible and not needed on GH-hosted runners.
+            sudo apt-get update
+            sudo apt-get install -y podman
+          fi
+          if [[ "${RUNNER_ENVIRONMENT:-}" == github-hosted ]]; then
+            # GH-hosted cannot provide a user-session service (documented limitation):
+            # exercise podman rootful/cgroupfs instead, which the runner supports.
+            if podman run --rm --pull=always docker.io/library/alpine:3.23 true 2>/dev/null; then
+              echo "::notice::podman GH-hosted mode: default (rootful) OK"
+            elif podman --cgroup-manager=cgroupfs run --rm --pull=always docker.io/library/alpine:3.23 true; then
+              echo "::notice::podman GH-hosted mode: --cgroup-manager=cgroupfs OK"
+            else
+              echo "::error::podman cannot execute containers on this GH-hosted runner"
+              exit 1
+            fi
+            podman info --format 'runtime cgroup_manager={{.Host.CgroupManager}} rootless={{.Host.Security.Rootless}}'
+          else
+            uid="$(id -u)"
+            sudo loginctl enable-linger "$(id -un)"
+            sudo systemctl start "user@$uid.service"
+            echo "XDG_RUNTIME_DIR=/run/user/$uid" >> "$GITHUB_ENV"
+            echo "DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/$uid/bus" >> "$GITHUB_ENV"
+            XDG_RUNTIME_DIR="/run/user/$uid" DBUS_SESSION_BUS_ADDRESS="unix:path=/run/user/$uid/bus" systemctl --user show-environment >/dev/null
+            test "$(podman info --format '{{.Host.Security.Rootless}}')" = true
+          fi
       - name: Checkout immutable production enrollment harness
         uses: actions/checkout@v7.0.1
         with:
