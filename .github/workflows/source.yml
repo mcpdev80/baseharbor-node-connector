@@ -113,9 +113,15 @@ jobs:
           if [[ "${RUNNER_ENVIRONMENT:-}" == github-hosted ]]; then
             # GH-hosted cannot provide a user-session service (documented limitation):
             # exercise podman rootful/cgroupfs instead, which the runner supports.
-            if ! podman run --rm --pull=always docker.io/library/alpine:3.23 true 2>/dev/null; then
-              podman --cgroup-manager=cgroupfs run --rm --pull=always docker.io/library/alpine:3.23 true
+            if podman run --rm --pull=always docker.io/library/alpine:3.23 true 2>/dev/null; then
+              echo "::notice::podman GH-hosted mode: default (rootful) OK"
+            elif podman --cgroup-manager=cgroupfs run --rm --pull=always docker.io/library/alpine:3.23 true; then
+              echo "::notice::podman GH-hosted mode: --cgroup-manager=cgroupfs OK"
+            else
+              echo "::error::podman cannot execute containers on this GH-hosted runner"
+              exit 1
             fi
+            podman info --format 'runtime cgroup_manager={{.Host.CgroupManager}} rootless={{.Host.Security.Rootless}}'
           else
             uid="$(id -u)"
             sudo loginctl enable-linger "$(id -un)"
@@ -219,9 +225,15 @@ jobs:
           if [[ "${RUNNER_ENVIRONMENT:-}" == github-hosted ]]; then
             # GH-hosted cannot provide a user-session service (documented limitation):
             # exercise podman rootful/cgroupfs instead, which the runner supports.
-            if ! podman run --rm --pull=always docker.io/library/alpine:3.23 true 2>/dev/null; then
-              podman --cgroup-manager=cgroupfs run --rm --pull=always docker.io/library/alpine:3.23 true
+            if podman run --rm --pull=always docker.io/library/alpine:3.23 true 2>/dev/null; then
+              echo "::notice::podman GH-hosted mode: default (rootful) OK"
+            elif podman --cgroup-manager=cgroupfs run --rm --pull=always docker.io/library/alpine:3.23 true; then
+              echo "::notice::podman GH-hosted mode: --cgroup-manager=cgroupfs OK"
+            else
+              echo "::error::podman cannot execute containers on this GH-hosted runner"
+              exit 1
             fi
+            podman info --format 'runtime cgroup_manager={{.Host.CgroupManager}} rootless={{.Host.Security.Rootless}}'
           else
             uid="$(id -u)"
             sudo loginctl enable-linger "$(id -un)"
