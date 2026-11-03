@@ -1,5 +1,9 @@
 # Release integration
 
+## Current CI policy — 2026-11-03
+
+Normal source, browser and native integration tests determine the job result. Required tests and owned cleanup must succeed. CI does not publish or consume gate manifests, authenticate Actions runs as evidence, or issue a separate receipt approval. The shared Core merge record in `baseharbor-plan` contains only the merge commit SHA and PR number. Historical qualification records below remain history; they are not prerequisites or reusable CI approvals.
+
 ## BaseHarbor v0.4.24 compatibility
 
 The v0.4.24 code candidate has completed joint native Docker and rootless Podman acceptance and the full Core pre-release evidence check. Publication remains pending. `integration-candidate.json` records the immutable tested code dependencies; documentation changes do not replace these source bindings.
@@ -10,7 +14,7 @@ See [Core release status](https://github.com/mcpdev80/baseharbor/pull/837) and t
 
 ## Running qualification
 
-Use the existing release-integration workflow with an exact reviewed source candidate. Repository-local checks do not substitute for real Core, OIDC, browser and native runtime journeys. Both Docker and Podman jobs must produce authenticated source-bound manifests with successful cleanup.
+Use the existing release-integration workflow with an exact reviewed source candidate. Repository-local checks do not substitute for real Core, OIDC, browser and native runtime journeys. The selected Docker and Podman tests must run successfully and complete owned cleanup. Their ordinary job results determine success; no source-bound gate manifest is produced or re-verified.
 
 ## Support boundaries
 

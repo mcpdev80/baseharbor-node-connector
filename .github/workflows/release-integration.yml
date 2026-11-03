@@ -7,7 +7,6 @@ name: "Release Integration \xB7 Connector"
     - work/v0.4.26-integrations-docs
 permissions:
   contents: read
-  actions: read
 concurrency:
   group: connector-release-${{ github.ref }}
   cancel-in-progress: true
@@ -347,23 +346,6 @@ jobs:
     - name: Stop owned test services and remove generated private keys
       if: always()
       run: bash scripts/browser/stop-fixture.sh
-    - uses: actions/upload-artifact@v6
-      if: always()
-      with:
-        name: actual-browser-core-read-receipt
-        path: ${{ runner.temp }}/baseharbor-browser/browser-receipt.json
-        if-no-files-found: warn
-        retention-days: 90
-    - name: Authenticate complete source-bound consumer release evidence
-      env:
-        GH_TOKEN: ${{ github.token }}
-      run: python3 "$GITHUB_WORKSPACE/scripts/release-integration-receipt.py"
-    - uses: actions/upload-artifact@v6
-      with:
-        name: private-integration-${{ matrix.artifact }}-${{ github.run_id }}-${{ github.run_attempt }}
-        path: ${{ runner.temp }}/baseharbor-browser/manifest.json
-        if-no-files-found: error
-        retention-days: 90
     strategy:
       fail-fast: false
       max-parallel: 2
