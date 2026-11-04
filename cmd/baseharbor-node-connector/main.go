@@ -91,6 +91,9 @@ func serviceRun(ctx context.Context, args []string, stderr io.Writer) error {
 	if strings.TrimSpace(*stateRoot) == "" {
 		return errors.New("--state-root is required")
 	}
+	if !nodeservice.IsSelfOwnedUnitName(*unit) {
+		return fmt.Errorf("node service setup rejected unit %q: unit identity is not self-owned", *unit)
+	}
 	absRoot, err := filepath.Abs(*stateRoot)
 	if err != nil {
 		return errors.New("invalid --state-root")
@@ -110,11 +113,11 @@ func serviceRun(ctx context.Context, args []string, stderr io.Writer) error {
 		if err != nil {
 			return fmt.Errorf("node service install: %w", err)
 		}
-		// Activate the connector's own unit for lingering autostart so the
-		// install reflects the [Install] WantedBy contract the unit advertises.
-		// Enable is idempotent and reported, never fatal when the manager cannot
-		// observe it; the unit remains active from Install.
-		_ = service.Enable(ctx, installed)
+		// Activate the connector's own unit for lingering autostart so a
+		// successful install guarantees the advertised [Install] contract.
+		if err := service.Enable(ctx, installed); err != nil {
+			return &ServiceSetupError{Stage: "enable", Unit: installed.Name, Err: err}
+		}
 	case "start":
 		if err := service.Start(ctx, nodeservice.Unit{Kind: nodeservice.UnitKindSystemdUser, Name: *unit, ExecLine: execLineFor(*unit)}); err != nil {
 			return fmt.Errorf("node service start: %w", err)
@@ -153,14 +156,29 @@ func execLineFor(unit string) string {
 // launch) and is allowed; a foreign unit name fails closed before any side
 // effect so the connector can never run under a unit it does not own.
 func enforceSelfOwnedUnit(name string) error {
-	if strings.TrimSpace(name) == "" {
+	if name == "" {
 		return nil
 	}
-	if !strings.Contains(strings.ToLower(name), "baseharbor-node-connector") {
+	if !nodeservice.IsSelfOwnedUnitName(name) {
 		return fmt.Errorf("connector unit %q is not self-owned to the connector binary identity", name)
 	}
 	return nil
 }
+
+// ServiceSetupError reports a failed install stage and any partial local state
+// the user must know about. An enable failure leaves the installed unit file in
+// place (and it may already be running), but it is not enabled for autostart.
+type ServiceSetupError struct {
+	Stage string
+	Unit  string
+	Err   error
+}
+
+func (e *ServiceSetupError) Error() string {
+	return fmt.Sprintf("node service setup failed during %s for unit %q; unit file remains installed and may be active, but is not enabled: %v", e.Stage, e.Unit, e.Err)
+}
+
+func (e *ServiceSetupError) Unwrap() error { return e.Err }
 func run(ctx context.Context, args []string, stderr io.Writer) error {
 	// The connector's OWN service lifecycle is a scoped subcommand: install/
 	// start/restart/uninstall of its own unit only. It never enrolls, writes Core

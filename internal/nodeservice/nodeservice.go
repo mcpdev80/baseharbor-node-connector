@@ -80,6 +80,14 @@ func (ConnectorOwnerAuthorizer) AuthorizeUnit(_ context.Context, unit Unit) erro
 	return nil
 }
 
+// IsSelfOwnedUnitName accepts only the canonical connector unit identities.
+// Runtime tags are structural fields, not free-form substrings.
+func IsSelfOwnedUnitName(name string) bool {
+	return name == ServiceNameForBinary("") ||
+		name == ServiceNameForBinary("docker") ||
+		name == ServiceNameForBinary("podman")
+}
+
 // ErrAlreadyEnrolled signals that a re-enrollment was attempted while an active,
 // matching enrollment already exists. Re-enrollment is deterministic: only an
 // expired, revoked or identity-mismatched enrollment may be replaced.
@@ -491,7 +499,7 @@ func validateSelfOwnedUnit(unit Unit) error {
 	if strings.TrimSpace(unit.Name) == "" {
 		return errors.New("connector unit name is required")
 	}
-	if !strings.Contains(strings.ToLower(unit.Name), "baseharbor-node-connector") {
+	if !IsSelfOwnedUnitName(unit.Name) {
 		return errors.New("connector unit must be self-owned to the connector binary identity")
 	}
 	if strings.TrimSpace(unit.ExecLine) == "" {

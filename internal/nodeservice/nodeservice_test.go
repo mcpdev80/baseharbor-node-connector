@@ -413,6 +413,68 @@ func TestValidateSelfOwnedUnitFailsClosed(t *testing.T) {
 	}
 }
 
+func TestValidateSelfOwnedUnitRequiresExactCanonicalIdentity(t *testing.T) {
+	for _, test := range []struct {
+		name    string
+		unit    string
+		wantErr bool
+	}{
+		{name: "exact own identity", unit: ServiceNameForBinary("podman")},
+		{name: "foreign prefix", unit: "foreign-baseharbor-node-connector.podman.container", wantErr: true},
+		{name: "foreign suffix", unit: "baseharbor-node-connector.podman.container.evil", wantErr: true},
+		{name: "same marker different rest", unit: "foreign-baseharbor-node-connector.evil.container", wantErr: true},
+		{name: "conflicting identity", unit: "baseharbor-node-connector.docker.container/baseharbor-node-connector.podman.container", wantErr: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			err := validateSelfOwnedUnit(Unit{Kind: UnitKindSystemdUser, Name: test.unit, ExecLine: "ExecStart=/bin/true"})
+			if test.wantErr && (err == nil || !strings.Contains(err.Error(), "self-owned")) {
+				t.Fatalf("noncanonical unit %q must be rejected, got %v", test.unit, err)
+			}
+			if !test.wantErr && err != nil {
+				t.Fatalf("canonical unit %q must be accepted, got %v", test.unit, err)
+			}
+		})
+	}
+}
+
+func TestForeignUnitInstallHasNoManagerOrStoreEffects(t *testing.T) {
+	for _, unitName := range []string{
+		"foreign-baseharbor-node-connector.podman.container",
+		"baseharbor-node-connector.podman.container.evil",
+		"foreign-baseharbor-node-connector.evil.container",
+		"baseharbor-node-connector.docker.container/baseharbor-node-connector.podman.container",
+	} {
+		t.Run(unitName, func(t *testing.T) {
+			manager := &fakeUnitManager{}
+			store := &fakeStore{missing: true}
+			driver := &fakeEnrollDriver{serial: "should-not-be-used"}
+			service := newTestService(manager, store, driver, nil).WithAuthorizer(allowAllAuthorizer{})
+			_, err := service.Install(context.Background(), Unit{
+				Kind: UnitKindSystemdUser, Name: unitName, ExecLine: "ExecStart=/bin/true",
+			})
+			if err == nil || !strings.Contains(err.Error(), "self-owned") {
+				t.Fatalf("noncanonical unit must fail at ownership validation, got %v", err)
+			}
+
+			manager.mu.Lock()
+			installed, calls := manager.installed, append([]string(nil), manager.calls...)
+			manager.mu.Unlock()
+			if installed || len(calls) != 0 {
+				t.Fatalf("rejected unit reached manager effects: installed=%v calls=%v", installed, calls)
+			}
+			store.mu.Lock()
+			missing, storedUnit, enrollment := store.missing, store.unit, store.enroll
+			store.mu.Unlock()
+			if !missing || storedUnit != (Unit{}) || enrollment != (EnrollmentState{}) {
+				t.Fatalf("rejected unit changed metadata: missing=%v unit=%#v enrollment=%#v", missing, storedUnit, enrollment)
+			}
+			if driver.callCount() != 0 {
+				t.Fatalf("rejected unit touched enrollment/key path %d times", driver.callCount())
+			}
+		})
+	}
+}
+
 // The protected state store refuses to load untagged or tampered payloads.
 func TestProtectedStateStoreRejectsTamperedPayload(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "state")
