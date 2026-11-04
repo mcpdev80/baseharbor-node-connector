@@ -93,3 +93,28 @@ func TestIdleSessionTrustFailureAndRevocationCloseWithinBound(t *testing.T) {
 		})
 	}
 }
+
+func TestSessionCAOverlapAndRetirement(t *testing.T) {
+	session, files := currentTrustSession(t)
+	oldTrust, err := os.ReadFile(files.TrustBundleFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _, replacementTrust := newTestCA(t)
+	overlap := append(append([]byte{}, oldTrust...), replacementTrust...)
+	if err := os.WriteFile(files.TrustBundleFile, overlap, 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := session.revalidatePeer(); err != nil {
+		t.Fatalf("overlapping trust roots must preserve existing session: %v", err)
+	}
+	if err := os.WriteFile(files.TrustBundleFile, replacementTrust, 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := session.revalidatePeer(); err == nil {
+		t.Fatal("old certificate remained trusted after root retirement")
+	}
+	if session.Context().Err() == nil {
+		t.Fatal("retired peer session was not closed")
+	}
+}

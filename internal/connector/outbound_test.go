@@ -44,3 +44,24 @@ func TestOutboundConfigRejectsNegativeTiming(t *testing.T) {
 		t.Fatal("negative reconnect delay unexpectedly accepted")
 	}
 }
+
+func TestReconnectDelayNeverOverflows(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		current time.Duration
+		maximum time.Duration
+		want    time.Duration
+	}{
+		{name: "normal", current: time.Second, maximum: 30 * time.Second, want: 2 * time.Second},
+		{name: "cap", current: 20 * time.Second, maximum: 30 * time.Second, want: 30 * time.Second},
+		{name: "at-cap", current: 30 * time.Second, maximum: 30 * time.Second, want: 30 * time.Second},
+		{name: "huge-overflow", current: time.Duration(1 << 62), maximum: time.Duration(1<<63 - 1), want: time.Duration(1<<63 - 1)},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got := nextReconnectDelay(tc.current, tc.maximum)
+			if got != tc.want {
+				t.Fatalf("next reconnect delay = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}

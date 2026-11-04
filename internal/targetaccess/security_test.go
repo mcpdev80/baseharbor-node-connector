@@ -67,3 +67,59 @@ func TestTLSFilesRejectRevokedSerialFromReloadableFile(t *testing.T) {
 		t.Fatalf("reloaded revocation file did not take effect: %v", err)
 	}
 }
+
+func TestRevocationFileRejectsInvalidEntriesAndPaddedSerials(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "revoked.txt")
+	files := TLSFiles{RevokedSerialsFile: path}
+	certificate := &x509.Certificate{SerialNumber: big.NewInt(42)}
+	for _, entry := range []string{"garbage", "0x", "12xz", "0xGG"} {
+		if err := os.WriteFile(path, []byte(entry), 0600); err != nil {
+			t.Fatal(err)
+		}
+		if err := files.verifyNotRevoked(certificate); err == nil {
+			t.Fatalf("invalid revocation entry %q was accepted", entry)
+		}
+	}
+	if err := os.WriteFile(path, []byte("0x002a"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := files.verifyNotRevoked(certificate); err == nil {
+		t.Fatal("revoked certificate with zero-padded serial was accepted")
+	}
+}
+
+func TestTLSClientCertificateIsReloadedAfterRotation(t *testing.T) {
+	ca, key, trust := newTestCA(t)
+	const identity = "spiffe://baseharbor/platform/connectors/11111111-1111-4111-8111-111111111111/target-a/node-a"
+	first := newTestLeaf(t, ca, key, trust, identity, big.NewInt(41))
+	second := newTestLeaf(t, ca, key, trust, identity, big.NewInt(42))
+	files := TLSFiles{CertificateFile: first.certPath, PrivateKeyFile: first.keyPath,
+		TrustBundleFile: first.caPath, ExpectedPeerIdentity: identity}
+	config, err := files.Config(TLSClient)
+	if err != nil {
+		t.Fatal(err)
+	}
+	before, err := config.GetClientCertificate(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, pair := range [][2]string{{second.certPath, first.certPath}, {second.keyPath, first.keyPath}} {
+		content, err := os.ReadFile(pair[0])
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(pair[1], content, 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	after, err := config.GetClientCertificate(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(before.Certificate) == 0 || len(after.Certificate) == 0 {
+		t.Fatal("rotated client certificate was not loaded")
+	}
+	if string(before.Certificate[0]) == string(after.Certificate[0]) {
+		t.Fatal("TLS configuration continued to use the retired client certificate")
+	}
+}

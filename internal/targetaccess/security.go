@@ -136,6 +136,13 @@ func (f TLSFiles) verifyNotRevoked(cert *x509.Certificate) error {
 			continue
 		}
 		value = strings.TrimPrefix(value, "0x")
+		if value == "" || strings.Trim(value, "0123456789abcdef") != "" {
+			return errors.New("revocation list contains an invalid certificate serial")
+		}
+		value = strings.TrimLeft(value, "0")
+		if value == "" {
+			value = "0"
+		}
 		if value == serial {
 			return fmt.Errorf("peer certificate serial %s is revoked", cert.SerialNumber.Text(16))
 		}

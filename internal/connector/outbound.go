@@ -69,12 +69,7 @@ func (a *TargetAccess) RunOutboundControl(ctx context.Context, cfg OutboundConfi
 		if err := waitReconnect(ctx, backoff); err != nil {
 			return err
 		}
-		if backoff < maxBackoff {
-			backoff *= 2
-			if backoff > maxBackoff {
-				backoff = maxBackoff
-			}
-		}
+		backoff = nextReconnectDelay(backoff, maxBackoff)
 	}
 }
 
@@ -118,4 +113,14 @@ func waitReconnect(ctx context.Context, delay time.Duration) error {
 	case <-timer.C:
 		return nil
 	}
+}
+
+func nextReconnectDelay(current, maximum time.Duration) time.Duration {
+	if current >= maximum {
+		return maximum
+	}
+	if current > maximum-current {
+		return maximum
+	}
+	return current * 2
 }
