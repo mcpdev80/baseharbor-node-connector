@@ -291,8 +291,11 @@ func (s *Service) Start(ctx context.Context, unit Unit) error {
 		return err
 	}
 	installed.Active, err = s.manager.Observe(ctx, installed)
-	if err == nil {
-		_ = s.save(ctx, installed, enrolledOrStored(ctx, s, unit))
+	if err != nil {
+		return fmt.Errorf("observe connector activation: %w", err)
+	}
+	if err := s.save(ctx, installed, enrolledOrStored(ctx, s, unit)); err != nil {
+		return fmt.Errorf("persist connector activation: %w", err)
 	}
 	return nil
 }
@@ -312,8 +315,11 @@ func (s *Service) Restart(ctx context.Context, unit Unit) error {
 		return err
 	}
 	installed.Active, err = s.manager.Observe(ctx, installed)
-	if err == nil {
-		_ = s.save(ctx, installed, enrolledOrStored(ctx, s, unit))
+	if err != nil {
+		return fmt.Errorf("observe connector activation: %w", err)
+	}
+	if err := s.save(ctx, installed, enrolledOrStored(ctx, s, unit)); err != nil {
+		return fmt.Errorf("persist connector activation: %w", err)
 	}
 	return nil
 }
@@ -414,6 +420,10 @@ func (s *Service) doReenroll(ctx context.Context, identity NodeRef) (EnrollmentR
 	if err := s.authorizeMetadata(ctx); err != nil {
 		return EnrollmentResult{}, err
 	}
+	installed, _, loadErr := s.metadata.Load(ctx)
+	if loadErr != nil && !errors.Is(loadErr, ErrNotFound) {
+		return EnrollmentResult{}, fmt.Errorf("load connector service before re-enrollment: %w", loadErr)
+	}
 	result, err := s.enroll.Reenroll(ctx, identity)
 	if err != nil {
 		return EnrollmentResult{}, err
@@ -426,7 +436,7 @@ func (s *Service) doReenroll(ctx context.Context, identity NodeRef) (EnrollmentR
 	// not undo the cryptographic binding already applied by the reused install
 	// path, but it must be surfaced so the node does not silently forget the
 	// enrollment it just bound.
-	if err := s.metadata.Save(ctx, Unit{}, EnrollmentState{
+	if err := s.metadata.Save(ctx, installed, EnrollmentState{
 		Identity:    identity.Identity,
 		Serial:      result.Serial,
 		Expires:     result.ExpiresAt,
