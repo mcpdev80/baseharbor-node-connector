@@ -596,3 +596,55 @@ func TestNativeSystemdUserLifecycleSmoke(t *testing.T) {
 		t.Fatalf("native second uninstall should be idempotent-clean, got: %v", err)
 	}
 }
+
+func TestReenrollPreservesInstalledUnitLifecycle(t *testing.T) {
+	ctx := context.Background()
+	mgr := &fakeUnitManager{active: StateActive}
+	store := &fakeStore{missing: true}
+	svc := newTestService(mgr, store, &fakeEnrollDriver{serial: "deadbeef"}, func() time.Time {
+		return time.Unix(1_000_000, 0).UTC()
+	}).WithAuthorizer(allowAllAuthorizer{})
+	unit := selfUnit()
+	if _, err := svc.Install(ctx, unit); err != nil {
+		t.Fatalf("install: %v", err)
+	}
+	if _, err := svc.Reenroll(ctx, NodeRef{Identity: identityID()}); err != nil {
+		t.Fatalf("reenroll: %v", err)
+	}
+	stored, enrollment, err := store.Load(ctx)
+	if err != nil {
+		t.Fatalf("load persisted state: %v", err)
+	}
+	if stored.Name != unit.Name || stored.Kind != unit.Kind || stored.ExecLine != unit.ExecLine {
+		t.Fatalf("reenrollment must retain installed unit: got %#v, want %#v", stored, unit)
+	}
+	if enrollment.Serial != "deadbeef" {
+		t.Fatalf("lost enrollment: %#v", enrollment)
+	}
+	for label, operation := range map[string]func(context.Context, Unit) error{
+		"start": svc.Start,
+		"restart": svc.Restart,
+		"uninstall": svc.Uninstall,
+	} {
+		if err := operation(ctx, unit); err != nil {
+			t.Fatalf("%s after reenrollment: %v", label, err)
+		}
+	}
+}
+
+func TestStartAndRestartPropagatePersistenceFailure(t *testing.T) {
+	ctx := context.Background()
+	saveFailure := errors.New("disk full")
+	for name, run := range map[string]func(*Service, context.Context, Unit) error{
+		"start": (*Service).Start,
+		"restart": (*Service).Restart,
+	} {
+		t.Run(name, func(t *testing.T) {
+			store := &fakeStore{unit: selfUnit(), saveErr: saveFailure}
+			svc := newTestService(&fakeUnitManager{active: StateActive}, store, &fakeEnrollDriver{}, nil).WithAuthorizer(allowAllAuthorizer{})
+			if err := run(svc, ctx, selfUnit()); !errors.Is(err, saveFailure) {
+				t.Fatalf("must propagate failed state persistence, got: %v", err)
+			}
+		})
+	}
+}
