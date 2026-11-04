@@ -67,3 +67,23 @@ func TestTLSFilesRejectRevokedSerialFromReloadableFile(t *testing.T) {
 		t.Fatalf("reloaded revocation file did not take effect: %v", err)
 	}
 }
+
+func TestRevocationFileRejectsInvalidEntriesAndPaddedSerials(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "revoked.txt")
+	files := TLSFiles{RevokedSerialsFile: path}
+	certificate := &x509.Certificate{SerialNumber: big.NewInt(42)}
+	for _, entry := range []string{"garbage", "0x", "12xz", "0xGG"} {
+		if err := os.WriteFile(path, []byte(entry), 0600); err != nil {
+			t.Fatal(err)
+		}
+		if err := files.verifyNotRevoked(certificate); err == nil {
+			t.Fatalf("invalid revocation entry %q was accepted", entry)
+		}
+	}
+	if err := os.WriteFile(path, []byte("0x002a"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := files.verifyNotRevoked(certificate); err == nil {
+		t.Fatal("revoked certificate with zero-padded serial was accepted")
+	}
+}
