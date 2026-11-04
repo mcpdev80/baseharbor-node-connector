@@ -102,12 +102,7 @@ func (a *TargetAccess) runOutboundWorker(ctx context.Context, cfg OutboundConfig
 		if err := waitReconnect(ctx, backoff); err != nil {
 			return err
 		}
-		if backoff < maxBackoff {
-			backoff *= 2
-			if backoff > maxBackoff {
-				backoff = maxBackoff
-			}
-		}
+		backoff = nextReconnectDelay(backoff, maxBackoff)
 	}
 }
 
