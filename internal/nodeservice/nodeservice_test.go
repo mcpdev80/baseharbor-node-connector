@@ -621,14 +621,14 @@ func TestReenrollPreservesInstalledUnitLifecycle(t *testing.T) {
 	if enrollment.Serial != "deadbeef" {
 		t.Fatalf("lost enrollment: %#v", enrollment)
 	}
-	for label, operation := range map[string]func(context.Context, Unit) error{
-		"start": svc.Start,
-		"restart": svc.Restart,
-		"uninstall": svc.Uninstall,
-	} {
-		if err := operation(ctx, unit); err != nil {
-			t.Fatalf("%s after reenrollment: %v", label, err)
-		}
+	if err := svc.Start(ctx, unit); err != nil {
+		t.Fatalf("start after reenrollment: %v", err)
+	}
+	if err := svc.Restart(ctx, unit); err != nil {
+		t.Fatalf("restart after reenrollment: %v", err)
+	}
+	if err := svc.Uninstall(ctx, unit); err != nil {
+		t.Fatalf("uninstall after reenrollment: %v", err)
 	}
 }
 
