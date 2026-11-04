@@ -54,6 +54,32 @@ var ErrNotFound = errors.New("no connector unit is installed on this node")
 // ErrUnauthorized signals a missing or invalid unit owner, which must fail closed.
 var ErrUnauthorized = errors.New("connector unit owner authorization is missing or invalid")
 
+// Authorizer validates the connector's own unit ownership before any lifecycle or
+// metadata side effect. It must fail closed: a nil or invalid owner returns
+// ErrUnauthorized and no manager or metadata effect runs. It is never consulted
+// for enrollment-only side effects.
+type Authorizer interface {
+	// AuthorizeUnit confirms the connector is permitted to operate on the given
+	// unit. It must reject any unit the connector does not own.
+	AuthorizeUnit(ctx context.Context, unit Unit) error
+}
+
+// ConnectorOwnerAuthorizer authorizes a lifecycle call when the connector's own
+// unit is self-owned and its identity binding is intact. It fails closed: any
+// self-owned check failure or a non self-owned unit returns ErrUnauthorized, so
+// the connector can never operate on a foreign unit. It never touches Core
+// placement or desired state.
+type ConnectorOwnerAuthorizer struct{}
+
+// AuthorizeUnit confirms the connector owns the unit: the name must reference the
+// connector binary identity and the kind must be a supported unit kind.
+func (ConnectorOwnerAuthorizer) AuthorizeUnit(_ context.Context, unit Unit) error {
+	if err := validateSelfOwnedUnit(unit); err != nil {
+		return err
+	}
+	return nil
+}
+
 // ErrAlreadyEnrolled signals that a re-enrollment was attempted while an active,
 // matching enrollment already exists. Re-enrollment is deterministic: only an
 // expired, revoked or identity-mismatched enrollment may be replaced.
@@ -98,6 +124,10 @@ type Service struct {
 	enroll   EnrollmentDriver
 	metadata MetadataStore
 	now      func() time.Time
+	// authorizer gates every lifecycle and metadata side effect. A nil authorizer
+	// fails closed: no manager or metadata effect runs until a real Authorizer is
+	// supplied. This is the "auth before effects" contract.
+	authorizer Authorizer
 }
 
 // UnitManager abstracts the native unit lifecycle the connector owns on the node.
@@ -223,14 +253,17 @@ func (s *Service) Install(ctx context.Context, unit Unit) (Unit, error) {
 	if err := validateSelfOwnedUnit(unit); err != nil {
 		return UnitNone, err
 	}
+	if err := s.authorizeEnforced(ctx, unit); err != nil {
+		return UnitNone, err
+	}
 	installed, err := s.manager.Install(ctx, unit)
 	if err != nil {
 		return UnitNone, err
 	}
-	installed.Active, err = s.manager.Observe(ctx, installed)
-	if err != nil {
-		return installed, nil
-	}
+	// Observe is best-effort: record activation when the unit manager answers,
+	// but always persist the installed unit so subsequent lifecycle calls can
+	// find it.
+	installed.Active, _ = s.manager.Observe(ctx, installed)
 	if err := s.save(ctx, installed, EnrollmentState{}); err != nil {
 		return installed, err
 	}
@@ -239,6 +272,9 @@ func (s *Service) Install(ctx context.Context, unit Unit) (Unit, error) {
 
 // Start activates the connector's own unit after verifying it is installed.
 func (s *Service) Start(ctx context.Context, unit Unit) error {
+	if err := s.authorizeEnforced(ctx, unit); err != nil {
+		return err
+	}
 	installed, err := s.EnsureInstall(ctx, unit)
 	if err != nil {
 		return err
@@ -257,6 +293,9 @@ func (s *Service) Start(ctx context.Context, unit Unit) error {
 // is identical to a cold start given the same unit content and enrollment
 // (restart == same behavior), which the regression test pins.
 func (s *Service) Restart(ctx context.Context, unit Unit) error {
+	if err := s.authorizeEnforced(ctx, unit); err != nil {
+		return err
+	}
 	installed, err := s.EnsureInstall(ctx, unit)
 	if err != nil {
 		return err
@@ -273,6 +312,9 @@ func (s *Service) Restart(ctx context.Context, unit Unit) error {
 
 // Enable enables automatic (lingering) start of the connector's own unit.
 func (s *Service) Enable(ctx context.Context, unit Unit) error {
+	if err := s.authorizeEnforced(ctx, unit); err != nil {
+		return err
+	}
 	installed, err := s.EnsureInstall(ctx, unit)
 	if err != nil {
 		return err
@@ -286,6 +328,9 @@ func (s *Service) Enable(ctx context.Context, unit Unit) error {
 
 // Disable disables automatic start of the connector's own unit.
 func (s *Service) Disable(ctx context.Context, unit Unit) error {
+	if err := s.authorizeEnforced(ctx, unit); err != nil {
+		return err
+	}
 	installed, err := s.EnsureInstall(ctx, unit)
 	if err != nil {
 		return err
@@ -300,6 +345,9 @@ func (s *Service) Disable(ctx context.Context, unit Unit) error {
 // Uninstall removes the connector's own unit and its activation receipt. It
 // fails closed when the unit is not self-owned or not installed.
 func (s *Service) Uninstall(ctx context.Context, unit Unit) error {
+	if err := s.authorizeEnforced(ctx, unit); err != nil {
+		return err
+	}
 	installed, err := s.EnsureInstall(ctx, unit)
 	if err != nil {
 		return err
@@ -353,6 +401,11 @@ func (s *Service) doReenroll(ctx context.Context, identity NodeRef) (EnrollmentR
 	if identity.Identity == "" {
 		return EnrollmentResult{}, ErrNotFound
 	}
+	// Authorization gates the re-enrollment side effect before any enrollment or
+	// metadata write runs, so an unauthorized call touches nothing.
+	if err := s.authorizeMetadata(ctx); err != nil {
+		return EnrollmentResult{}, err
+	}
 	result, err := s.enroll.Reenroll(ctx, identity)
 	if err != nil {
 		return EnrollmentResult{}, err
@@ -378,6 +431,36 @@ func (s *Service) doReenroll(ctx context.Context, identity NodeRef) (EnrollmentR
 
 func (s *Service) save(ctx context.Context, unit Unit, enroll EnrollmentState) error {
 	return s.metadata.Save(ctx, unit, enroll)
+}
+
+// authorizeEnforced fails closed before any lifecycle or metadata side effect.
+// A nil authorizer is itself unauthorized: no manager or metadata effect may run.
+// The connector may only ever operate on its own self-owned unit.
+func (s *Service) authorizeEnforced(ctx context.Context, unit Unit) error {
+	if s.authorizer == nil {
+		return ErrUnauthorized
+	}
+	if err := validateSelfOwnedUnit(unit); err != nil {
+		return err
+	}
+	return s.authorizer.AuthorizeUnit(ctx, unit)
+}
+
+// authorizeMetadata fails closed before a metadata-only side effect (e.g. the
+// re-enrollment persist). A nil authorizer is itself unauthorized: the metadata
+// effect must not run.
+func (s *Service) authorizeMetadata(ctx context.Context) error {
+	if s.authorizer == nil {
+		return ErrUnauthorized
+	}
+	return nil
+}
+// side effect. It is the single seam the CLI uses to bind the connector's real
+// unit-owner authorization. Until it is set, every lifecycle/metadata call fails
+// closed with ErrUnauthorized.
+func (s *Service) WithAuthorizer(authorizer Authorizer) *Service {
+	s.authorizer = authorizer
+	return s
 }
 
 func (s *Service) clear(ctx context.Context) error {

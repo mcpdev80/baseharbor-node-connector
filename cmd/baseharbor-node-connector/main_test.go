@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"github.com/mcpdev80/baseharbor-node-connector/internal/targetaccess"
 	"os"
 	"path/filepath"
@@ -96,5 +97,29 @@ func testTLSFiles(files []string) targetaccess.TLSFiles {
 		CertificateFile: files[0],
 		PrivateKeyFile:  files[1],
 		TrustBundleFile: files[2],
+	}
+}
+
+// The service subcommand exposes an executable lifecycle path and fails closed
+// when the unit is not self-owned to the connector binary identity.
+func TestServiceSubcommandRejectsForeignUnit(t *testing.T) {
+	dir := t.TempDir()
+	var stderr bytes.Buffer
+	err := serviceRun(context.Background(), []string{"--unit", "foreign-unit.container", "--state-root", dir, "--op", "install"}, &stderr)
+	if err == nil {
+		t.Fatal("service install of a foreign unit must be rejected")
+	}
+}
+
+// The service subcommand requires an op and a self-owned unit; missing fields are
+// rejected before any lifecycle runs.
+func TestServiceSubcommandRequiresOpAndSelfOwnedUnit(t *testing.T) {
+	dir := t.TempDir()
+	var stderr bytes.Buffer
+	if err := serviceRun(context.Background(), []string{"--unit", "baseharbor-node-connector.podman.container", "--state-root", dir}, &stderr); err == nil {
+		t.Fatal("service without --op must be rejected")
+	}
+	if err := serviceRun(context.Background(), []string{"--op", "install", "--state-root", dir}, &stderr); err == nil {
+		t.Fatal("service without --unit must be rejected")
 	}
 }

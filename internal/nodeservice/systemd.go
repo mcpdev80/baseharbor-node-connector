@@ -6,6 +6,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"crypto/x509"
+	"encoding/hex"
 	"encoding/json"
 	"encoding/pem"
 	"errors"
@@ -20,8 +21,9 @@ import (
 )
 
 // systemdUnitManager implements UnitManager for a rootless systemd user
-// instance. It owns only the connector's own unit and observes activation; it
-// never applies or removes Core-managed units.
+// instance. It writes, activates and removes ONLY the connector's own unit and
+// observes its activation. It never applies or removes Core-managed units: every
+// operation is scoped to the connector's own unit artifact basename.
 //
 // The real native wiring shells out to `systemctl --user` / `podman` against a
 // reachable systemd user manager. That harness is intentionally injected here as
@@ -29,12 +31,15 @@ import (
 // session. A missing user manager is reported as unreachable, not swallowed.
 type systemdUnitManager struct {
 	runner execx.Runner
-	// selfName is the exact unit artifact basename the connector owns.
+	// unitDir is the XDG systemd-user directory the unit artifact is written to.
+	unitDir string
+	// selfName is the exact unit artifact basename (e.g.
+	// baseharbor-node-connector.podman.container) the connector owns.
 	selfName string
 }
 
-func newSystemdUnitManager(runner execx.Runner, selfName string) *systemdUnitManager {
-	return &systemdUnitManager{runner: runner, selfName: selfName}
+func newSystemdUnitManager(runner execx.Runner, selfName, unitDir string) *systemdUnitManager {
+	return &systemdUnitManager{runner: runner, unitDir: unitDir, selfName: selfName}
 }
 
 func (m *systemdUnitManager) availableOr(ctx context.Context) bool {
@@ -44,34 +49,183 @@ func (m *systemdUnitManager) availableOr(ctx context.Context) bool {
 	return err == nil
 }
 
-func (m *systemdUnitManager) Install(_ context.Context, unit Unit) (Unit, error) {
-	if !m.availableOr(context.Background()) {
+// artifactPath resolves the XDG systemd-user directory for the connector's OWN
+// .service artifact. The .container quadlet basename is translated to its
+// derived .service artifact so `systemctl --user` loads it directly without
+// quadlet processing. Ownership stays on the connector's own artifact.
+func (m *systemdUnitManager) artifactPath(unit Unit) (string, error) {
+	if strings.TrimSpace(m.unitDir) == "" {
+		return "", errors.New("systemd user unit directory is required")
+	}
+	created := false
+	resolved, err := filepath.EvalSymlinks(m.unitDir)
+	if err != nil {
+		if !errors.Is(err, os.ErrNotExist) {
+			return "", fmt.Errorf("resolve systemd user unit directory: %w", err)
+		}
+		if err := os.MkdirAll(m.unitDir, 0o700); err != nil {
+			return "", fmt.Errorf("create systemd user unit directory: %w", err)
+		}
+		created = true
+		resolved = m.unitDir
+	}
+	if !created {
+		info, err := os.Stat(resolved)
+		if err != nil || !info.IsDir() {
+			return "", fmt.Errorf("systemd user unit directory must be a directory: %w", err)
+		}
+	}
+	name := unit.Name
+	if strings.TrimSpace(name) == "" {
+		name = m.selfName
+	}
+	if !strings.Contains(strings.ToLower(name), "baseharbor-node-connector") {
+		return "", errors.New("connector unit must be self-owned to the connector binary identity")
+	}
+	// Translate the quadlet basename (baseharbor-node-connector.podman.container)
+	// to the derived systemd .service artifact the manager owns.
+	serviceName := serviceNameToService(name)
+	abs, err := filepath.Abs(filepath.Join(resolved, serviceName))
+	if err != nil {
+		return "", fmt.Errorf("resolve systemd user unit path: %w", err)
+	}
+	if rel, err := filepath.Rel(resolved, abs); err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return "", errors.New("systemd user unit path escapes the unit directory")
+	}
+	return abs, nil
+}
+
+// serviceNameToService maps a quadlet artifact basename to its derived systemd
+// .service artifact. Only the terminal quadlet extension is stripped, matching
+// systemd-quadlet's own derivation: baseharbor-node-connector.podman.container
+// -> baseharbor-node-connector.podman.service.
+func serviceNameToService(name string) string {
+	ext := filepath.Ext(name)
+	if ext != "" {
+		return strings.TrimSuffix(name, ext) + ".service"
+	}
+	return name + ".service"
+}
+
+// Install writes the connector's own unit with the validated ExecLine to the XDG
+// systemd-user directory, reloads the manager, and starts it. Install reports
+// failure when only the manager was probed and no unit was actually written: a
+// real, persisted, activation-capable unit is the effect, not a probe.
+func (m *systemdUnitManager) Install(ctx context.Context, unit Unit) (Unit, error) {
+	if !m.availableOr(ctx) {
 		return UnitNone, errors.New("systemd user manager is not reachable")
 	}
-	if unit.Name == "" {
+	if strings.TrimSpace(unit.Name) == "" {
 		unit.Name = m.selfName
+	}
+	if err := validateSelfOwnedUnit(unit); err != nil {
+		return UnitNone, err
+	}
+	path, err := m.artifactPath(unit)
+	if err != nil {
+		return UnitNone, err
+	}
+	content, err := m.renderUnit(unit, path)
+	if err != nil {
+		return UnitNone, err
+	}
+	if err := atomicWriteUnit(path, content); err != nil {
+		return UnitNone, err
+	}
+	if err := m.reload(ctx); err != nil {
+		return UnitNone, err
+	}
+	if err := m.start(ctx, unit); err != nil {
+		return UnitNone, err
 	}
 	return unit, nil
 }
 
+// renderUnit builds the .service file content for the connector's own unit. The
+// validated ExecStart line (Unit.ExecLine, already "ExecStart=...") is emitted
+// verbatim under [Service] so the unit never references untrusted input. The
+// [Install] WantedBy directive requests lingering autostart across the user
+// session.
+func (m *systemdUnitManager) renderUnit(unit Unit, path string) (string, error) {
+	var sb strings.Builder
+	sb.WriteString("[Unit]\n")
+	sb.WriteString("Description=BaseHarbor Connector node service\n\n")
+	sb.WriteString("[Service]\n")
+	sb.WriteString(unit.ExecLine + "\n")
+	sb.WriteString("Restart=on-failure\n\n")
+	sb.WriteString("[Install]\n")
+	sb.WriteString("WantedBy=default.target\n")
+	return sb.String(), nil
+}
+
+// Remove stops, disables and removes the connector's OWN unit through supported
+// systemctl operations. It fails closed when the unit is not owned by the
+// connector and never touches a foreign unit.
+func (m *systemdUnitManager) Remove(ctx context.Context, unit Unit) error {
+	if !m.availableOr(ctx) {
+		return errors.New("systemd user manager is not reachable")
+	}
+	if strings.TrimSpace(unit.Name) == "" {
+		unit.Name = m.selfName
+	}
+	if err := validateSelfOwnedUnit(unit); err != nil {
+		return err
+	}
+	path, err := m.artifactPath(unit)
+	if err != nil {
+		return err
+	}
+	// Stop and disable before removal so no activation receipt survives us. A unit
+	// that is already gone is in the desired (removed) state, so a missing-unit
+	// disable/stop is idempotent-clean, not an error.
+	if err := m.disable(ctx, unit); err != nil {
+		if !isUnitNotFound(err) {
+			return err
+		}
+	}
+	if err := m.stop(ctx, unit); err != nil {
+		if !isUnitNotFound(err) {
+			return err
+		}
+	}
+	if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("remove connector unit file: %w", err)
+	}
+	return m.reload(ctx)
+}
+
+// isUnitNotFound reports whether a systemctl error indicates the target unit
+// does not exist (already removed), which uninstall treats as idempotent-clean.
+func isUnitNotFound(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "does not exist") ||
+		strings.Contains(msg, "no such unit") ||
+		strings.Contains(msg, "not loaded")
+}
+
 func (m *systemdUnitManager) Start(ctx context.Context, unit Unit) error {
-	return m.run(ctx, "start", unitName(unit))
+	return m.start(ctx, unit)
 }
 
 func (m *systemdUnitManager) Restart(ctx context.Context, unit Unit) error {
-	return m.run(ctx, "restart", unitName(unit))
-}
-
-func (m *systemdUnitManager) Remove(ctx context.Context, unit Unit) error {
-	return m.run(ctx, "remove", unitName(unit))
+	if !m.availableOr(ctx) {
+		return errors.New("systemd user manager is not reachable")
+	}
+	if strings.TrimSpace(unit.Name) == "" {
+		unit.Name = m.selfName
+	}
+	return m.restart(ctx, unit)
 }
 
 func (m *systemdUnitManager) Enable(ctx context.Context, unit Unit) error {
-	return m.run(ctx, "enable", unitName(unit))
+	return m.enable(ctx, unit)
 }
 
 func (m *systemdUnitManager) Disable(ctx context.Context, unit Unit) error {
-	return m.run(ctx, "disable", unitName(unit))
+	return m.disable(ctx, unit)
 }
 
 func (m *systemdUnitManager) Observe(_ context.Context, unit Unit) (State, error) {
@@ -91,11 +245,45 @@ func (m *systemdUnitManager) Observe(_ context.Context, unit Unit) (State, error
 	}
 }
 
-func (m *systemdUnitManager) run(ctx context.Context, op, unit string) error {
+func (m *systemdUnitManager) reload(ctx context.Context) error {
 	if !m.availableOr(ctx) {
 		return errors.New("systemd user manager is not reachable")
 	}
-	_, err := m.runner.Run(ctx, nil, "systemctl", "--user", op, unit)
+	_, err := m.runner.Run(ctx, nil, "systemctl", "--user", "daemon-reload")
+	return err
+}
+
+func (m *systemdUnitManager) start(ctx context.Context, unit Unit) error {
+	if !m.availableOr(ctx) {
+		return errors.New("systemd user manager is not reachable")
+	}
+	_, err := m.runner.Run(ctx, nil, "systemctl", "--user", "start", unitName(unit))
+	return err
+}
+
+func (m *systemdUnitManager) restart(ctx context.Context, unit Unit) error {
+	_, err := m.runner.Run(ctx, nil, "systemctl", "--user", "restart", unitName(unit))
+	return err
+}
+
+func (m *systemdUnitManager) enable(ctx context.Context, unit Unit) error {
+	if !m.availableOr(ctx) {
+		return errors.New("systemd user manager is not reachable")
+	}
+	_, err := m.runner.Run(ctx, nil, "systemctl", "--user", "enable", unitName(unit))
+	return err
+}
+
+func (m *systemdUnitManager) disable(ctx context.Context, unit Unit) error {
+	if !m.availableOr(ctx) {
+		return errors.New("systemd user manager is not reachable")
+	}
+	_, err := m.runner.Run(ctx, nil, "systemctl", "--user", "disable", unitName(unit))
+	return err
+}
+
+func (m *systemdUnitManager) stop(ctx context.Context, unit Unit) error {
+	_, err := m.runner.Run(ctx, nil, "systemctl", "--user", "stop", unitName(unit))
 	return err
 }
 
@@ -169,7 +357,11 @@ func (s *protectedStateStore) Save(_ context.Context, unit Unit, enroll Enrollme
 	if err != nil {
 		return fmt.Errorf("encode connector service state: %w", err)
 	}
-	tagged := append(appendStateTag(payload), '\n')
+	// Layout: [payload][stateTagPrefix][hex-digest]. The prefix ends in "\n" so
+	// the digest is always the trailing line; the payload's own newlines do not
+	// fragment the tag.
+	payloadDigest := sha256.Sum256(payload)
+	tagged := append(payload, []byte(stateTagPrefix+hex.EncodeToString(payloadDigest[:]))...)
 	tmp := s.path + ".tmp"
 	if err := os.WriteFile(tmp, tagged, 0o600); err != nil {
 		return fmt.Errorf("write connector service state: %w", err)
@@ -188,39 +380,80 @@ func (s *protectedStateStore) clear(_ context.Context) error {
 
 const stateTagPrefix = "#baseharbor-nodeservice-state/v1\n"
 
-func appendStateTag(payload []byte) []byte {
-	digest := sha256.Sum256(payload)
-	return append([]byte(stateTagPrefix), digest[:]...)
-}
-
 func verifyStateTag(data []byte) error {
-	if !strings.HasPrefix(string(data), stateTagPrefix) {
+	idx := strings.Index(string(data), stateTagPrefix)
+	if idx < 0 {
 		return errors.New("connector service state is missing its integrity tag")
 	}
-	lines := strings.SplitN(string(data), "\n", 3)
-	if len(lines) < 3 {
-		return errors.New("connector service state has a malformed integrity tag")
-	}
-	payload := []byte(lines[1])
-	recorded := []byte(strings.TrimSpace(lines[2]))
-	if len(recorded) != 32 {
+	payload := data[:idx]
+	recorded := strings.TrimSpace(string(data[idx+len(stateTagPrefix):]))
+	if len(recorded) != 64 {
 		return errors.New("connector service state integrity tag has wrong length")
 	}
-	want := sha256.Sum256(payload)
-	for i := range want {
-		if want[i] != recorded[i] {
-			return errors.New("connector service state integrity tag does not match payload")
-		}
+	digest := sha256.Sum256(payload)
+	want := hex.EncodeToString(digest[:])
+	if !secureConstantTimeEqual(want, recorded) {
+		return errors.New("connector service state integrity tag does not match payload")
 	}
 	return nil
 }
 
+func secureConstantTimeEqual(a, b string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	var v byte
+	for i := range a {
+		v |= a[i] ^ b[i]
+	}
+	return v == 0
+}
+
 func stripStateTag(data []byte) []byte {
-	idx := strings.IndexByte(string(data), '\n')
+	idx := strings.Index(string(data), stateTagPrefix)
 	if idx < 0 {
 		return data
 	}
-	return data[idx+1:]
+	return data[:idx]
+}
+
+// atomicWriteUnit writes a unit artifact to the systemd-user directory with a
+// 0600 regular file and no symlink escape: the unit must be persisted on disk
+// before systemd can load, start or remove it.
+func atomicWriteUnit(path string, content string) error {
+	path = filepath.Clean(path)
+	dir := filepath.Dir(path)
+	if dir == "" || dir == "." {
+		return errors.New("unit directory is required")
+	}
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return fmt.Errorf("create systemd user unit directory: %w", err)
+	}
+	tmp, err := os.CreateTemp(dir, ".baseharbor-unit-*")
+	if err != nil {
+		return fmt.Errorf("stage connector unit: %w", err)
+	}
+	tmpName := tmp.Name()
+	defer os.Remove(tmpName)
+	if err := tmp.Chmod(0o600); err != nil {
+		_ = tmp.Close()
+		return fmt.Errorf("protect connector unit permissions: %w", err)
+	}
+	if _, err := tmp.WriteString(content); err != nil {
+		_ = tmp.Close()
+		return fmt.Errorf("write connector unit: %w", err)
+	}
+	if err := tmp.Sync(); err != nil {
+		_ = tmp.Close()
+		return fmt.Errorf("flush connector unit: %w", err)
+	}
+	if err := tmp.Close(); err != nil {
+		return fmt.Errorf("close connector unit: %w", err)
+	}
+	if err := os.Rename(tmpName, path); err != nil {
+		return fmt.Errorf("install connector unit: %w", err)
+	}
+	return nil
 }
 
 // NewService constructs the thin service coordinator over a native unit manager
@@ -234,7 +467,9 @@ func NewService(manager UnitManager, store MetadataStore, enroll EnrollmentDrive
 }
 
 // NewSystemdService wires a rootless systemd-user service manager over a
-// protected state root and a bootstrap re-enrollment driver.
+// protected state root and a bootstrap re-enrollment driver. The unit artifact
+// is written to the XDG systemd-user unit directory so `systemctl --user`
+// observes, starts and removes the connector's own unit.
 func NewSystemdService(
 	runner execx.Runner,
 	stateDir string,
@@ -248,8 +483,30 @@ func NewSystemdService(
 	if err != nil {
 		return nil, err
 	}
-	manager := newSystemdUnitManager(runner, selfName)
+	// XDG systemd-user unit directory: the place `systemctl --user` loads units
+	// from without quadlet processing.
+	unitDir, err := defaultSystemdUserUnitDir()
+	if err != nil {
+		return nil, err
+	}
+	manager := newSystemdUnitManager(runner, selfName, unitDir)
 	return NewService(manager, store, driver, nil), nil
+}
+
+// defaultSystemdUserUnitDir resolves the XDG systemd-user unit directory,
+// defaulting to ~/.config/systemd/user and honoring XDG_CONFIG_HOME.
+func defaultSystemdUserUnitDir() (string, error) {
+	if dir := strings.TrimSpace(os.Getenv("XDG_CONFIG_HOME")); dir != "" {
+		return filepath.Join(dir, "systemd", "user"), nil
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", fmt.Errorf("determine home directory: %w", err)
+	}
+	if home == "" {
+		return "", errors.New("systemd user unit directory is required")
+	}
+	return filepath.Join(home, ".config", "systemd", "user"), nil
 }
 
 // ServiceNameForBinary returns the canonical connector unit artifact basename

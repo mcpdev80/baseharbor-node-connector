@@ -17,6 +17,8 @@ import (
 	"github.com/mcpdev80/baseharbor-node-connector/internal/connector"
 	bhruntime "github.com/mcpdev80/baseharbor-node-connector/internal/runtime"
 	"github.com/mcpdev80/baseharbor-node-connector/internal/targetaccess"
+	"github.com/mcpdev80/baseharbor-node-connector/internal/execx"
+	"github.com/mcpdev80/baseharbor-node-connector/internal/nodeservice"
 )
 
 const defaultCoreIdentity = "spiffe://baseharbor/platform/core/control-plane"
@@ -58,10 +60,91 @@ func main() {
 	}
 }
 
+// serviceRun wires the connector's OWN rootless node-service lifecycle
+// (install/start/restart/uninstall) to an executable path. It is scoped to the
+// connector's own unit only: it never touches a Core-managed unit, never writes
+// Core desired state, and never performs enrollment. Authorization is enforced
+// before any lifecycle or metadata side effect via the nodeservice Authorizer.
+func serviceRun(ctx context.Context, args []string, stderr io.Writer) error {
+	fs := flag.NewFlagSet("baseharbor-node-connector service", flag.ContinueOnError)
+	fs.SetOutput(stderr)
+	unit := fs.String("unit", "", "connector unit artifact basename (must be self-owned to the connector binary identity)")
+	stateRoot := fs.String("state-root", "", "connector state root (unit artifact + protected metadata live under it)")
+	op := fs.String("op", "", "lifecycle operation: install|start|restart|uninstall (owner-scoped to the connector's own unit)")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if fs.NArg() != 0 {
+		return errors.New("unexpected positional arguments")
+	}
+	if strings.TrimSpace(*op) == "" {
+		return errors.New("--op is required (install|start|restart|uninstall)")
+	}
+	if strings.TrimSpace(*unit) == "" {
+		return errors.New("--unit is required and must reference the connector binary identity")
+	}
+	if strings.TrimSpace(*stateRoot) == "" {
+		return errors.New("--state-root is required")
+	}
+	absRoot, err := filepath.Abs(*stateRoot)
+	if err != nil {
+		return errors.New("invalid --state-root")
+	}
+	runner := execx.Runner{}
+	service, err := nodeservice.NewSystemdService(runner, absRoot, *unit, nil)
+	if err != nil {
+		return fmt.Errorf("build node service: %w", err)
+	}
+	// Enforce explicit authorization before any lifecycle/metadata side effect.
+	// The connector is authorized only for its own self-owned unit; a nil or
+	// invalid owner fails closed with ErrUnauthorized.
+	service.WithAuthorizer(nodeservice.ConnectorOwnerAuthorizer{})
+	switch strings.ToLower(*op) {
+	case "install":
+		if _, err := service.Install(ctx, nodeservice.Unit{Kind: nodeservice.UnitKindSystemdUser, Name: *unit, ExecLine: execLineFor(*unit)}); err != nil {
+			return fmt.Errorf("node service install: %w", err)
+		}
+	case "start":
+		if err := service.Start(ctx, nodeservice.Unit{Kind: nodeservice.UnitKindSystemdUser, Name: *unit, ExecLine: execLineFor(*unit)}); err != nil {
+			return fmt.Errorf("node service start: %w", err)
+		}
+	case "restart":
+		if err := service.Restart(ctx, nodeservice.Unit{Kind: nodeservice.UnitKindSystemdUser, Name: *unit, ExecLine: execLineFor(*unit)}); err != nil {
+			return fmt.Errorf("node service restart: %w", err)
+		}
+	case "uninstall":
+		if err := service.Uninstall(ctx, nodeservice.Unit{Kind: nodeservice.UnitKindSystemdUser, Name: *unit, ExecLine: execLineFor(*unit)}); err != nil {
+			return fmt.Errorf("node service uninstall: %w", err)
+		}
+	default:
+		return fmt.Errorf("unsupported service op %q (want install|start|restart|uninstall)", *op)
+	}
+	return nil
+}
+
+// execLineFor derives the connector's validated ExecStart for its own unit. The
+// connector binary path is resolved from the executable; the validated flags are
+// limited to the connector's own identity so the unit never references untrusted
+// input.
+func execLineFor(unit string) string {
+	exe, err := os.Executable()
+	if err != nil || strings.TrimSpace(exe) == "" {
+		exe = "baseharbor-node-connector"
+	}
+	return fmt.Sprintf("%s --self-owned-unit %s", filepath.Base(exe), unit)
+}
+
 func run(ctx context.Context, args []string, stderr io.Writer) error {
 	cfg, err := parseConfig(args, stderr)
 	if err != nil {
 		return err
+	}
+
+	// The connector's OWN service lifecycle is a scoped subcommand: install/
+	// start/restart/uninstall of its own unit only. It never enrolls, writes Core
+	// desired state or touches a Core-managed unit.
+	if len(args) > 0 && args[0] == "service" {
+		return serviceRun(ctx, args[1:], stderr)
 	}
 
 	service, err := connector.Open(ctx, connector.Config{

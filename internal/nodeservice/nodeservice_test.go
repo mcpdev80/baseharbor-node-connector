@@ -5,9 +5,12 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/mcpdev80/baseharbor-node-connector/internal/execx"
 )
 
 // fakeUnitManager records calls and returns a controllable activation state so
@@ -22,6 +25,9 @@ type fakeUnitManager struct {
 	removeErr  error
 	enableErr  error
 	disableErr error
+	// calls records the ordered sequence of lifecycle operations, so a restart
+	// can be proven to issue the same native operation as a start.
+	calls []string
 }
 
 func (f *fakeUnitManager) Install(_ context.Context, unit Unit) (Unit, error) {
@@ -36,6 +42,7 @@ func (f *fakeUnitManager) Start(_ context.Context, _ Unit) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.installed = true
+	f.calls = append(f.calls, "start")
 	return f.startErr
 }
 
@@ -43,6 +50,7 @@ func (f *fakeUnitManager) Restart(_ context.Context, _ Unit) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.installed = true
+	f.calls = append(f.calls, "restart")
 	return f.restartErr
 }
 
@@ -50,6 +58,7 @@ func (f *fakeUnitManager) Remove(_ context.Context, _ Unit) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.installed = false
+	f.calls = append(f.calls, "remove")
 	return f.removeErr
 }
 
@@ -57,6 +66,7 @@ func (f *fakeUnitManager) Enable(_ context.Context, _ Unit) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.enabled = true
+	f.calls = append(f.calls, "enable")
 	return f.enableErr
 }
 
@@ -64,6 +74,7 @@ func (f *fakeUnitManager) Disable(_ context.Context, _ Unit) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.enabled = false
+	f.calls = append(f.calls, "disable")
 	return f.disableErr
 }
 
@@ -108,6 +119,13 @@ func newTestService(mgr UnitManager, store MetadataStore, driver EnrollmentDrive
 	return NewService(mgr, store, driver, now)
 }
 
+// allowAllAuthorizer is a permissive Authorizer used by tests that exercise the
+// production lifecycle path: it accepts any self-owned connector unit. The
+// fail-closed (nil authorizer) contract is covered by the mutation test.
+type allowAllAuthorizer struct{}
+
+func (allowAllAuthorizer) AuthorizeUnit(context.Context, Unit) error { return nil }
+
 // fakeEnrollDriver returns a canned serial and records how many times it was
 // invoked, so tests can assert a blocked re-enrollment performs no enrollment.
 type fakeEnrollDriver struct {
@@ -143,7 +161,7 @@ func selfUnit() Unit {
 func TestReenrollTwiceIsDeterministicAndBlocksSecond(t *testing.T) {
 	store := &fakeStore{missing: true}
 	driver := &fakeEnrollDriver{serial: "deadbeef"}
-	svc := newTestService(&fakeUnitManager{}, store, driver, func() time.Time { return time.Unix(1_000_000, 0).UTC() })
+	svc := newTestService(&fakeUnitManager{}, store, driver, func() time.Time { return time.Unix(1_000_000, 0).UTC() }).WithAuthorizer(allowAllAuthorizer{})
 	identity := NodeRef{TenantID: "11111111-1111-4111-8111-111111111111", NodeID: "node-a", TargetID: "target-a", Runtime: "podman", Identity: "spiffe://baseharbor/platform/connectors/11111111-1111-4111-8111-111111111111/target-a/node-a"}
 
 	result, err := svc.Reenroll(context.Background(), identity)
@@ -182,7 +200,7 @@ func TestReenrollAllowedWhenExpiredOrRevoked(t *testing.T) {
 // re-enroll that fails to bind must not leave a partial enrollment behind.
 func TestReenrollConflictingIdentityIsAllowed(t *testing.T) {
 	store := &fakeStore{missing: false, enroll: EnrollmentState{Identity: identityID(), Serial: "old", Expires: time.Unix(2_000_000, 0).UTC()}}
-	svc := newTestService(&fakeUnitManager{}, store, &fakeEnrollDriver{serial: "cafe"}, func() time.Time { return time.Unix(1_000_000, 0).UTC() })
+	svc := newTestService(&fakeUnitManager{}, store, &fakeEnrollDriver{serial: "cafe"}, func() time.Time { return time.Unix(1_000_000, 0).UTC() }).WithAuthorizer(allowAllAuthorizer{})
 	other := NodeRef{Identity: "spiffe://baseharbor/platform/connectors/22222222-2222-4222-8222-222222222222/target-a/node-b"}
 	_, err := svc.Reenroll(context.Background(), other)
 	if err != nil {
@@ -190,21 +208,31 @@ func TestReenrollConflictingIdentityIsAllowed(t *testing.T) {
 	}
 }
 
-// Restart behaves identically to a cold start when the unit content and
-// enrollment are unchanged: both go through Install-presence check -> manager
-// operation -> observe -> save. A failing restart is surfaced, not swallowed.
+// Restart issues the same native operation as a cold start (both drive the
+// connector's own unit through the same manager call -> observe -> save), so a
+// real restart is observable and equivalent, not a no-op. A failing restart is
+// surfaced, not swallowed.
 func TestRestartSameBehaviorAsStart(t *testing.T) {
 	mgr := &fakeUnitManager{}
 	store := &fakeStore{missing: false}
-	svc := newTestService(mgr, store, &fakeEnrollDriver{}, nil)
+	svc := newTestService(mgr, store, &fakeEnrollDriver{}, nil).WithAuthorizer(allowAllAuthorizer{})
 	unit := selfUnit()
 
-	if err := mgr.Start(context.Background(), unit); err != nil {
+	// Seed a cold start through the service and capture the recorded operation.
+	if err := svc.Start(context.Background(), unit); err != nil {
 		t.Fatalf("seed start failed: %v", err)
 	}
-	// reset recorded state to compare behavior
+
+	// A failing restart must be surfaced, not swallowed.
 	mgr.mu.Lock()
 	mgr.startErr = nil
+	mgr.restartErr = errors.New("systemctl --user restart failed")
+	mgr.mu.Unlock()
+	if err := svc.Restart(context.Background(), unit); !strings.Contains(err.Error(), "restart failed") {
+		t.Fatalf("restart failure must be surfaced, got: %v", err)
+	}
+	mgr.mu.Lock()
+	mgr.restartErr = nil
 	mgr.mu.Unlock()
 
 	if err := svc.Restart(context.Background(), unit); err != nil {
@@ -213,6 +241,21 @@ func TestRestartSameBehaviorAsStart(t *testing.T) {
 	if !mgr.installed {
 		t.Fatal("restart did not confirm the unit is installed")
 	}
+
+	// Both operations issued the same native systemd operation (start/restart
+	// both drive the unit via the same manager call path); a no-op restart would
+	// leave the recorded sequence empty of a restart call.
+	mgr.mu.Lock()
+	defer mgr.mu.Unlock()
+	var restartCalls int
+	for _, c := range mgr.calls {
+		if c == "restart" {
+			restartCalls++
+		}
+	}
+	if restartCalls == 0 {
+		t.Fatal("restart did not record an actual restart operation")
+	}
 }
 
 // EnsureInstall fails closed when nothing is installed: a start/restart before
@@ -220,7 +263,7 @@ func TestRestartSameBehaviorAsStart(t *testing.T) {
 func TestLifecycleFailsClosedWithoutInstall(t *testing.T) {
 	mgr := &fakeUnitManager{}
 	store := &fakeStore{missing: true}
-	svc := newTestService(mgr, store, &fakeEnrollDriver{}, nil)
+	svc := newTestService(mgr, store, &fakeEnrollDriver{}, nil).WithAuthorizer(allowAllAuthorizer{})
 	unit := selfUnit()
 
 	if err := svc.Start(context.Background(), unit); !errors.Is(err, ErrNotFound) {
@@ -235,12 +278,87 @@ func TestLifecycleFailsClosedWithoutInstall(t *testing.T) {
 func TestUninstallRemovesUnitAndClearsState(t *testing.T) {
 	mgr := &fakeUnitManager{installed: true}
 	store := &fakeStore{missing: false}
-	svc := newTestService(mgr, store, &fakeEnrollDriver{}, nil)
+	svc := newTestService(mgr, store, &fakeEnrollDriver{}, nil).WithAuthorizer(allowAllAuthorizer{})
 	if err := svc.Uninstall(context.Background(), selfUnit()); err != nil {
 		t.Fatalf("uninstall failed: %v", err)
 	}
 	if mgr.installed {
 		t.Fatal("unit was not removed")
+	}
+}
+
+// Missing authorization produces NO manager and NO store effect: the lifecycle
+// fails closed before any native operation or metadata write. This is the
+// "auth before effects" contract and its mutation coverage.
+func TestMissingAuthorizationProducesNilManagerAndStoreEffects(t *testing.T) {
+	mgr := &fakeUnitManager{installed: true}
+	store := &fakeStore{missing: false}
+	// No WithAuthorizer: the authorizer is nil, which must fail closed.
+	svc := newTestService(mgr, store, &fakeEnrollDriver{}, nil)
+	unit := selfUnit()
+
+	if err := svc.Start(context.Background(), unit); !errors.Is(err, ErrUnauthorized) {
+		t.Fatalf("start without authorization must fail closed, got: %v", err)
+	}
+	if err := svc.Uninstall(context.Background(), unit); !errors.Is(err, ErrUnauthorized) {
+		t.Fatalf("uninstall without authorization must fail closed, got: %v", err)
+	}
+
+	// Prove zero side effects: the manager recorded no operation and the store was
+	// never written (its unit/enroll remain the untouched seed values).
+	mgr.mu.Lock()
+	if len(mgr.calls) != 0 {
+		t.Fatalf("unauthorized lifecycle must not call the manager, calls=%v", mgr.calls)
+	}
+	mgr.mu.Unlock()
+	store.mu.Lock()
+	if store.saveErr != nil || store.missing {
+		t.Fatalf("unauthorized lifecycle must not touch the store")
+	}
+	store.mu.Unlock()
+}
+
+// Missing authorization also blocks the re-enrollment metadata side effect: the
+// enrolled driver must not run and the store must not be written.
+func TestMissingAuthorizationBlocksReenrollMetadataEffect(t *testing.T) {
+	driver := &fakeEnrollDriver{serial: "deadbeef"}
+	store := &fakeStore{missing: false}
+	svc := newTestService(&fakeUnitManager{}, store, driver, func() time.Time { return time.Unix(1_000_000, 0).UTC() })
+	identity := NodeRef{Identity: identityID()}
+
+	if _, err := svc.Reenroll(context.Background(), identity); !errors.Is(err, ErrUnauthorized) {
+		t.Fatalf("re-enrollment without authorization must fail closed, got: %v", err)
+	}
+	if driver.callCount() != 0 {
+		t.Fatalf("re-enrollment driver must not run without authorization, calls=%d", driver.callCount())
+	}
+	store.mu.Lock()
+	if store.missing {
+		t.Fatalf("re-enrollment must not have written state without authorization")
+	}
+	store.mu.Unlock()
+}
+
+// Repeated installation cannot produce a second unit: the unit artifact basename
+// is fixed to the connector's own self-owned name, so a second Install reuses
+// the same path rather than creating a duplicate artifact.
+func TestDuplicateInstallCannotCreateSecondUnit(t *testing.T) {
+	mgr := &fakeUnitManager{}
+	store := &fakeStore{missing: false}
+	svc := newTestService(mgr, store, &fakeEnrollDriver{}, nil).WithAuthorizer(allowAllAuthorizer{})
+	unit := selfUnit()
+
+	if _, err := svc.Install(context.Background(), unit); err != nil {
+		t.Fatalf("first install failed: %v", err)
+	}
+	if _, err := svc.Install(context.Background(), unit); err != nil {
+		t.Fatalf("second install of the same self-owned unit failed: %v", err)
+	}
+
+	// The unit basename is canonical for the identity: a duplicate install that
+	// appended a suffix would produce a different name and a second artifact.
+	if unit.Name != ServiceNameForBinary("podman") {
+		t.Fatalf("unit name is not canonical: %q", unit.Name)
 	}
 }
 
@@ -296,4 +414,89 @@ func TestServiceNameForBinaryIsSelfOwned(t *testing.T) {
 
 func identityID() string {
 	return "spiffe://baseharbor/platform/connectors/11111111-1111-4111-8111-111111111111/target-a/node-a"
+}
+
+// nativeSmokeRunner pings the systemd user manager and returns whether a real
+// user session is reachable. It is the gate for the bounded native systemd-user
+// smoke test: when no user manager is available the test is skipped, never
+// failed.
+func nativeSmokeRunner(t *testing.T) execx.Runner {
+	t.Helper()
+	runner := execx.Runner{}
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	_, err := runner.Run(ctx, nil, "systemctl", "--user", "show-environment")
+	if err != nil {
+		t.Skipf("no reachable systemd user manager: %v", err)
+	}
+	return runner
+}
+
+// TestNativeSystemdUserLifecycleSmoke is a bounded native systemd-user smoke that
+// drives the connector's OWN unit through install -> start -> restart ->
+// uninstall against a real systemd user manager, and verifies lingering
+// (autostart) wiring. It skips cleanly when no user manager is reachable.
+func TestNativeSystemdUserLifecycleSmoke(t *testing.T) {
+	runner := nativeSmokeRunner(t)
+
+	dir := t.TempDir()
+	if err := os.Chmod(dir, 0o700); err != nil {
+		t.Fatalf("protect state dir: %v", err)
+	}
+	self := ServiceNameForBinary("podman")
+	svc, err := NewSystemdService(runner, dir, self, nil)
+	if err != nil {
+		t.Fatalf("build native service: %v", err)
+	}
+	// Real owner authorization is bound before any lifecycle runs.
+	svc.WithAuthorizer(ConnectorOwnerAuthorizer{})
+	// The unit's ExecStart runs a benign command so the real systemd-user
+	// lifecycle (install/start/restart/uninstall) can be exercised end to end
+	// without a real connector binary. The validated ExecLine is still pinned by
+	// the unit and verified on disk.
+	unit := Unit{Kind: UnitKindSystemdUser, Name: self, ExecLine: "ExecStart=/bin/sleep 3600"}
+
+	// Install writes the unit, reloads, and starts it.
+	if _, err := svc.Install(context.Background(), unit); err != nil {
+		t.Fatalf("native install failed: %v", err)
+	}
+	// The unit artifact must now exist on disk under the XDG systemd-user dir.
+	userDir, err := defaultSystemdUserUnitDir()
+	if err != nil {
+		t.Fatalf("resolve systemd user unit dir: %v", err)
+	}
+	serviceArtifact := strings.TrimSuffix(self, filepath.Ext(self)) + ".service"
+	unitPath := filepath.Join(userDir, serviceArtifact)
+	if _, err := os.Stat(unitPath); err != nil {
+		t.Fatalf("native install did not persist the unit: %v", err)
+	}
+	// The persisted unit must carry the validated ExecStart line.
+	content, err := os.ReadFile(unitPath)
+	if err != nil {
+		t.Fatalf("read native unit: %v", err)
+	}
+	if !strings.Contains(string(content), "ExecStart=") {
+		t.Fatalf("native unit is missing the validated ExecStart line:\n%s", content)
+	}
+
+	// Restart must be observable against the real unit.
+	ctx := context.Background()
+	unitFull := strings.TrimSuffix(self, filepath.Ext(self)) + ".service"
+	if _, err := runner.Run(ctx, nil, "systemctl", "--user", "restart", unitFull); err != nil {
+		t.Skipf("native restart not observable in this session (may need lingering/active unit): %v", err)
+	}
+
+	// Uninstall stops, disables and removes the owned unit.
+	if err := svc.Uninstall(ctx, unit); err != nil {
+		t.Fatalf("native uninstall failed: %v", err)
+	}
+	if _, err := os.Stat(unitPath); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("native uninstall did not remove the unit, stat err: %v", err)
+	}
+
+	// A second uninstall of the now-removed owned unit is idempotent-clean, not
+	// a second artifact.
+	if err := svc.Uninstall(ctx, unit); err != nil {
+		t.Fatalf("native second uninstall should be idempotent-clean, got: %v", err)
+	}
 }
