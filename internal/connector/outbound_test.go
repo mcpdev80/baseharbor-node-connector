@@ -47,10 +47,10 @@ func TestOutboundConfigRejectsNegativeTiming(t *testing.T) {
 
 func TestReconnectDelayNeverOverflows(t *testing.T) {
 	for _, tc := range []struct {
-		name string
+		name    string
 		current time.Duration
 		maximum time.Duration
-		want time.Duration
+		want    time.Duration
 	}{
 		{name: "normal", current: time.Second, maximum: 30 * time.Second, want: 2 * time.Second},
 		{name: "cap", current: 20 * time.Second, maximum: 30 * time.Second, want: 30 * time.Second},
