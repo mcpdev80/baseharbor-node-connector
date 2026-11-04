@@ -636,7 +636,7 @@ func TestStartAndRestartPropagatePersistenceFailure(t *testing.T) {
 	ctx := context.Background()
 	saveFailure := errors.New("disk full")
 	for name, run := range map[string]func(*Service, context.Context, Unit) error{
-		"start": (*Service).Start,
+		"start":   (*Service).Start,
 		"restart": (*Service).Restart,
 	} {
 		t.Run(name, func(t *testing.T) {
