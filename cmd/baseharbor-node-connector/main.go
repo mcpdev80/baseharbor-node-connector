@@ -15,10 +15,10 @@ import (
 	"syscall"
 
 	"github.com/mcpdev80/baseharbor-node-connector/internal/connector"
-	bhruntime "github.com/mcpdev80/baseharbor-node-connector/internal/runtime"
-	"github.com/mcpdev80/baseharbor-node-connector/internal/targetaccess"
 	"github.com/mcpdev80/baseharbor-node-connector/internal/execx"
 	"github.com/mcpdev80/baseharbor-node-connector/internal/nodeservice"
+	bhruntime "github.com/mcpdev80/baseharbor-node-connector/internal/runtime"
+	"github.com/mcpdev80/baseharbor-node-connector/internal/targetaccess"
 )
 
 const defaultCoreIdentity = "spiffe://baseharbor/platform/core/control-plane"
@@ -135,16 +135,18 @@ func execLineFor(unit string) string {
 }
 
 func run(ctx context.Context, args []string, stderr io.Writer) error {
+	// The connector's OWN service lifecycle is a scoped subcommand: install/
+	// start/restart/uninstall of its own unit only. It never enrolls, writes Core
+	// desired state or touches a Core-managed unit. It is dispatched before the
+	// full outbound config parse so a scoped lifecycle call never requires Core
+	// connection arguments.
+	if len(args) > 0 && args[0] == "service" {
+		return serviceRun(ctx, args[1:], stderr)
+	}
+
 	cfg, err := parseConfig(args, stderr)
 	if err != nil {
 		return err
-	}
-
-	// The connector's OWN service lifecycle is a scoped subcommand: install/
-	// start/restart/uninstall of its own unit only. It never enrolls, writes Core
-	// desired state or touches a Core-managed unit.
-	if len(args) > 0 && args[0] == "service" {
-		return serviceRun(ctx, args[1:], stderr)
 	}
 
 	service, err := connector.Open(ctx, connector.Config{

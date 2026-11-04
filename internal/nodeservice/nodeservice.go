@@ -455,9 +455,10 @@ func (s *Service) authorizeMetadata(ctx context.Context) error {
 	}
 	return nil
 }
-// side effect. It is the single seam the CLI uses to bind the connector's real
-// unit-owner authorization. Until it is set, every lifecycle/metadata call fails
-// closed with ErrUnauthorized.
+
+// WithAuthorizer binds the connector's real unit-owner authorization seam. It
+// fails closed before any lifecycle or metadata side effect. A nil authorizer
+// is itself unauthorized: no manager or metadata effect may run.
 func (s *Service) WithAuthorizer(authorizer Authorizer) *Service {
 	s.authorizer = authorizer
 	return s
