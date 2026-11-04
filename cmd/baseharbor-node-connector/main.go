@@ -49,6 +49,11 @@ type appConfig struct {
 	RetainToken            bool
 	RenewCertificate       bool
 	Sessions               int
+	// SelfOwnedUnit is the systemd-user unit name the connector runs under. It is
+	// optional for ad-hoc launches; when present (as systemd emits it in the
+	// connector's own unit ExecStart) the connector proves the unit is self-owned
+	// to the connector binary identity before any side effect.
+	SelfOwnedUnit string
 }
 
 func main() {
@@ -101,9 +106,15 @@ func serviceRun(ctx context.Context, args []string, stderr io.Writer) error {
 	service.WithAuthorizer(nodeservice.ConnectorOwnerAuthorizer{})
 	switch strings.ToLower(*op) {
 	case "install":
-		if _, err := service.Install(ctx, nodeservice.Unit{Kind: nodeservice.UnitKindSystemdUser, Name: *unit, ExecLine: execLineFor(*unit)}); err != nil {
+		installed, err := service.Install(ctx, nodeservice.Unit{Kind: nodeservice.UnitKindSystemdUser, Name: *unit, ExecLine: execLineFor(*unit)})
+		if err != nil {
 			return fmt.Errorf("node service install: %w", err)
 		}
+		// Activate the connector's own unit for lingering autostart so the
+		// install reflects the [Install] WantedBy contract the unit advertises.
+		// Enable is idempotent and reported, never fatal when the manager cannot
+		// observe it; the unit remains active from Install.
+		_ = service.Enable(ctx, installed)
 	case "start":
 		if err := service.Start(ctx, nodeservice.Unit{Kind: nodeservice.UnitKindSystemdUser, Name: *unit, ExecLine: execLineFor(*unit)}); err != nil {
 			return fmt.Errorf("node service start: %w", err)
@@ -135,6 +146,21 @@ func execLineFor(unit string) string {
 	return fmt.Sprintf("%s --self-owned-unit %s", exe, unit)
 }
 
+// enforceSelfOwnedUnit guards the direct-launch path: when the connector is
+// started with an explicit self-owned unit (as systemd emits it in the
+// connector's own unit ExecStart) the unit must be self-owned to the connector
+// binary identity. A blank value means no explicit unit was passed (ad-hoc
+// launch) and is allowed; a foreign unit name fails closed before any side
+// effect so the connector can never run under a unit it does not own.
+func enforceSelfOwnedUnit(name string) error {
+	if strings.TrimSpace(name) == "" {
+		return nil
+	}
+	if !strings.Contains(strings.ToLower(name), "baseharbor-node-connector") {
+		return fmt.Errorf("connector unit %q is not self-owned to the connector binary identity", name)
+	}
+	return nil
+}
 func run(ctx context.Context, args []string, stderr io.Writer) error {
 	// The connector's OWN service lifecycle is a scoped subcommand: install/
 	// start/restart/uninstall of its own unit only. It never enrolls, writes Core
@@ -149,6 +175,12 @@ func run(ctx context.Context, args []string, stderr io.Writer) error {
 	if err != nil {
 		return err
 	}
+
+	// Owner-binding guard runs inside parseConfig before the outbound config
+	// requirements: when the connector is launched directly with an explicit
+	// self-owned unit the unit must be self-owned to the connector binary. A
+	// foreign unit name fails closed before any side effect so the connector
+	// never runs under a unit it does not own.
 
 	service, err := connector.Open(ctx, connector.Config{
 		Runtime:            bhruntime.Kind(cfg.Runtime),
@@ -247,11 +279,18 @@ func parseConfig(args []string, stderr io.Writer) (appConfig, error) {
 	fs.BoolVar(&cfg.RetainToken, "retain-bootstrap-authorization", false, "retain consumed bootstrap authorization after successful enrollment")
 	fs.BoolVar(&cfg.RenewCertificate, "renew-certificate", false, "exchange an explicit one-use Core renewal authorization for this existing node")
 	fs.IntVar(&cfg.Sessions, "sessions", 0, "outbound session count (default 4, max 32)")
+	fs.StringVar(&cfg.SelfOwnedUnit, "self-owned-unit", env("BASEHARBOR_CONNECTOR_SELF_OWNED_UNIT", ""), "connector systemd-user unit name the caller must own (owner-binding guard)")
 	if err := fs.Parse(args); err != nil {
 		return appConfig{}, err
 	}
 	if fs.NArg() != 0 {
 		return appConfig{}, errors.New("unexpected positional arguments")
+	}
+	// Owner-binding guard runs before the outbound config requirements so a
+	// foreign self-owned unit fails closed with the owner error, not a
+	// downstream config error.
+	if err := enforceSelfOwnedUnit(cfg.SelfOwnedUnit); err != nil {
+		return appConfig{}, err
 	}
 	if cfg.Runtime != "" && cfg.Runtime != "docker" && cfg.Runtime != "podman" {
 		return appConfig{}, errors.New("--runtime must be docker or podman")

@@ -146,7 +146,8 @@ func (m *systemdUnitManager) Install(ctx context.Context, unit Unit) (Unit, erro
 // validated flags) is emitted as a single "ExecStart=..." line under [Service] so
 // the unit never references untrusted input and systemd always finds a valid
 // ExecStart. The [Install] WantedBy directive requests lingering autostart
-// across the user session.
+// across the user session; Install enables the unit via `systemctl --user
+// enable` so the advertised autostart is real, not merely declared.
 func (m *systemdUnitManager) renderUnit(unit Unit, path string) (string, error) {
 	line := strings.TrimSpace(unit.ExecLine)
 	if line == "" {

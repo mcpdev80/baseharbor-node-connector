@@ -123,3 +123,31 @@ func TestServiceSubcommandRequiresOpAndSelfOwnedUnit(t *testing.T) {
 		t.Fatal("service without --unit must be rejected")
 	}
 }
+
+// The direct-launch owner-binding guard accepts a blank unit (ad-hoc launch) and
+// a unit that references the connector binary; it fails closed on any foreign
+// unit name so the connector can never run under a unit it does not own.
+func TestEnforceSelfOwnedUnitFailsClosedOnForeignUnit(t *testing.T) {
+	if err := enforceSelfOwnedUnit(""); err != nil {
+		t.Fatalf("blank unit (ad-hoc launch) must be allowed, got: %v", err)
+	}
+	if err := enforceSelfOwnedUnit("baseharbor-node-connector.podman.container"); err != nil {
+		t.Fatalf("connector-owned unit must be allowed, got: %v", err)
+	}
+	if err := enforceSelfOwnedUnit("foreign-core.service"); err == nil {
+		t.Fatal("foreign unit must be rejected by the owner-binding guard")
+	}
+}
+
+// The rendered ExecStart for the connector's own unit carries the
+// --self-owned-unit flag and the connector accepts its own unit name through
+// the guard, proving the shipped ExecStart is executable.
+func TestExecLineCarriesSelfOwnedUnitFlagAndOwnUnitPasses(t *testing.T) {
+	line := execLineFor("baseharbor-node-connector.podman.container")
+	if !strings.Contains(line, "--self-owned-unit") {
+		t.Fatalf("ExecStart must carry the --self-owned-unit flag, got: %q", line)
+	}
+	if err := enforceSelfOwnedUnit("baseharbor-node-connector.podman.container"); err != nil {
+		t.Fatalf("own unit from ExecStart must pass the guard, got: %v", err)
+	}
+}

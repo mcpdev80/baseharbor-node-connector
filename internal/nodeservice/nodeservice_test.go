@@ -362,6 +362,40 @@ func TestDuplicateInstallCannotCreateSecondUnit(t *testing.T) {
 	}
 }
 
+// Install activates the connector's own unit for lingering autostart; the
+// orchestrator calls Enable after Install persists the unit, so the advertised
+// [Install] WantedBy policy is real. Enable is idempotent: a second enable of
+// the already-enabled unit is a clean no-op, not an error.
+func TestInstallEnablesOwnUnitForLingering(t *testing.T) {
+	mgr := &fakeUnitManager{}
+	store := &fakeStore{missing: false}
+	svc := newTestService(mgr, store, &fakeEnrollDriver{}, nil).WithAuthorizer(allowAllAuthorizer{})
+
+	if _, err := svc.Install(context.Background(), selfUnit()); err != nil {
+		t.Fatalf("install failed: %v", err)
+	}
+
+	// The orchestrator enables the own unit after install to make lingering real.
+	if err := svc.Enable(context.Background(), selfUnit()); err != nil {
+		t.Fatalf("enable after install failed: %v", err)
+	}
+
+	mgr.mu.Lock()
+	enabled := mgr.enabled
+	mgr.mu.Unlock()
+	if !enabled {
+		t.Fatal("the connector's own unit must be enabled for lingering autostart")
+	}
+
+	// A failing Enable must be surfaced, not swallowed.
+	mgr.mu.Lock()
+	mgr.enableErr = errors.New("systemctl --user enable failed")
+	mgr.mu.Unlock()
+	if err := svc.Enable(context.Background(), selfUnit()); !strings.Contains(err.Error(), "enable failed") {
+		t.Fatalf("enabling the own unit must surface activation failures, got: %v", err)
+	}
+}
+
 // A self-owned unit name that does not reference the connector binary is
 // rejected; unknown kinds are rejected; blank ExecStart is rejected.
 func TestValidateSelfOwnedUnitFailsClosed(t *testing.T) {
