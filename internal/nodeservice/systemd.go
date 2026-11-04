@@ -142,16 +142,26 @@ func (m *systemdUnitManager) Install(ctx context.Context, unit Unit) (Unit, erro
 }
 
 // renderUnit builds the .service file content for the connector's own unit. The
-// validated ExecStart line (Unit.ExecLine, already "ExecStart=...") is emitted
-// verbatim under [Service] so the unit never references untrusted input. The
-// [Install] WantedBy directive requests lingering autostart across the user
-// session.
+// validated ExecLine (Unit.ExecLine, the connector binary absolute path plus its
+// validated flags) is emitted as a single "ExecStart=..." line under [Service] so
+// the unit never references untrusted input and systemd always finds a valid
+// ExecStart. The [Install] WantedBy directive requests lingering autostart
+// across the user session.
 func (m *systemdUnitManager) renderUnit(unit Unit, path string) (string, error) {
+	line := strings.TrimSpace(unit.ExecLine)
+	if line == "" {
+		return "", errors.New("connector unit ExecStart line is required")
+	}
+	// Enforce the systemd-required "ExecStart=" prefix so a bare command (which
+	// systemd would reject as "Missing '='") can never reach the unit file.
+	if !strings.HasPrefix(line, "ExecStart=") {
+		line = "ExecStart=" + line
+	}
 	var sb strings.Builder
 	sb.WriteString("[Unit]\n")
 	sb.WriteString("Description=BaseHarbor Connector node service\n\n")
 	sb.WriteString("[Service]\n")
-	sb.WriteString(unit.ExecLine + "\n")
+	sb.WriteString(line + "\n")
 	sb.WriteString("Restart=on-failure\n\n")
 	sb.WriteString("[Install]\n")
 	sb.WriteString("WantedBy=default.target\n")

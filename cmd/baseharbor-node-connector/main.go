@@ -125,13 +125,14 @@ func serviceRun(ctx context.Context, args []string, stderr io.Writer) error {
 // execLineFor derives the connector's validated ExecStart for its own unit. The
 // connector binary path is resolved from the executable; the validated flags are
 // limited to the connector's own identity so the unit never references untrusted
-// input.
+// input. An absolute ExecStart is emitted so systemd can locate the binary
+// directly rather than relying on a bare basename being on PATH.
 func execLineFor(unit string) string {
 	exe, err := os.Executable()
 	if err != nil || strings.TrimSpace(exe) == "" {
-		exe = "baseharbor-node-connector"
+		exe = "/usr/local/bin/baseharbor-node-connector"
 	}
-	return fmt.Sprintf("%s --self-owned-unit %s", filepath.Base(exe), unit)
+	return fmt.Sprintf("%s --self-owned-unit %s", exe, unit)
 }
 
 func run(ctx context.Context, args []string, stderr io.Writer) error {
