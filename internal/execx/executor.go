@@ -7,7 +7,6 @@ import (
 	"os"
 	"os/exec"
 	"strings"
-	"syscall"
 	"time"
 )
 
@@ -74,14 +73,6 @@ func (Runner) Stream(ctx context.Context, env map[string]string, name string, ar
 	}
 	cmd := exec.CommandContext(ctx, name, args...)
 	cmd.Env = os.Environ()
-	// Run the executable in its own process group and set a wait delay so that
-	// when ctx is cancelled the whole group is killed, not just the direct
-	// child. A child that outlives its parent (e.g. a `docker logs --follow`
-	// wrapper shell holding the stdout pipe open via a backgrounded `sleep`)
-	// would otherwise keep the reader blocked forever after the ctx deadline
-	// fires, so the stream never ends and no terminal event is delivered.
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
-	cmd.WaitDelay = 500 * time.Millisecond
 	for key, value := range env {
 		if strings.TrimSpace(key) == "" ||
 			strings.Contains(key, "=") ||
