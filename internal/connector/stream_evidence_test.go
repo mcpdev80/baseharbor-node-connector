@@ -162,17 +162,12 @@ fi
 // count is baked into the script so the correct binary is found first on PATH.
 //
 // When invoked with --follow (a live follow stream) the fake prints the n lines
-// and then `exec sleep`s so a single process holds the stdout open until the
-// caller's ctx kills it. Using `exec` keeps the process identity (no orphaned
-// `sleep` grandchild left holding the pipe open), which is what the real
-// `docker logs --follow` does and what lets the server-side disconnect see a
-// clean EOF on client cancel.
-//
-// The follow sleep is short and bounded: `docker logs --follow` ends when the
-// container stops, so the fake exits after a few seconds too. That lets the
-// reader see EOF and the stream end terminally (StreamEnd) — which is what the
-// at-least-once accounting case asserts — without the server ctx deadline or
-// client cancel being required to kill the process.
+// and then exits 0 once every line is out. A bounded `exec sleep N` was used
+// originally, but on a slow/cold runner the sleep could elapse while the read
+// loop had not yet drained the final lines, dropping them before the read loop
+// saw EOF — the off-by-one flake CI hit. Exitting deterministically after all
+// lines are written makes the exact-count accounting (case B) and the 600-line
+// retention boundary (case A) reproducible regardless of runner speed.
 func newBoundedHarness(t *testing.T, n int) *streamHarness {
 	t.Helper()
 	fixture := t.TempDir()
@@ -190,7 +185,7 @@ while [ "$m" -lt "$count" ]; do
   /usr/bin/echo "line-$m"
 done
 if [ "$FOLLOW" -eq 1 ]; then
-  exec sleep 3
+  exit 0
 fi
 `, n)
 	if err := os.WriteFile(filepath.Join(bin, "docker"), []byte(script), 0700); err != nil {
