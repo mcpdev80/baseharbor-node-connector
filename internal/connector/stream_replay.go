@@ -93,6 +93,20 @@ func (r *streamReplayRegistry) resume(streamID string, after uint64) ([]targetac
 	return result, stream.closed, nil
 }
 
+// isDetached reports whether a non-terminal stream has been detached (the
+// disconnect handler set active=false without marking it closed) without
+// mutating state. Unlike resume it does not set active=true, so polling it is
+// side-effect free.
+func (r *streamReplayRegistry) isDetached(streamID string) (bool, bool) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	stream, ok := r.streams[streamID]
+	if !ok {
+		return false, false
+	}
+	return !stream.active && !stream.closed, stream.closed
+}
+
 func (r *streamReplayRegistry) detach(streamID string) {
 	r.mu.Lock()
 	defer r.mu.Unlock()

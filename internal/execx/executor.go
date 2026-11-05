@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+	"syscall"
 	"time"
 )
 
@@ -73,6 +74,14 @@ func (Runner) Stream(ctx context.Context, env map[string]string, name string, ar
 	}
 	cmd := exec.CommandContext(ctx, name, args...)
 	cmd.Env = os.Environ()
+	// Run the executable in its own process group and set a wait delay so that
+	// when ctx is cancelled the whole group is killed, not just the direct
+	// child. A child that outlives its parent (e.g. a `docker logs --follow`
+	// wrapper shell holding the stdout pipe open via a backgrounded `sleep`)
+	// would otherwise keep the reader blocked forever after the ctx deadline
+	// fires, so the stream never ends and no terminal event is delivered.
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	cmd.WaitDelay = 500 * time.Millisecond
 	for key, value := range env {
 		if strings.TrimSpace(key) == "" ||
 			strings.Contains(key, "=") ||
@@ -93,8 +102,13 @@ func (Runner) Stream(ctx context.Context, env map[string]string, name string, ar
 		return nil, err
 	}
 	go func() {
-		err := cmd.Wait()
-		_ = writer.CloseWithError(err)
+		// The ctx deadline ends a follow stream by cancelling the context, which
+		// kills the runtime subprocess (exec.CommandContext). From the reader's
+		// perspective that is a clean end of the log stream, so close the pipe
+		// with io.EOF rather than the kill error: ServeLogStream then emits the
+		// terminal StreamEnd instead of a StreamError.
+		_ = cmd.Wait()
+		_ = writer.CloseWithError(io.EOF)
 	}()
 	return reader, nil
 }
