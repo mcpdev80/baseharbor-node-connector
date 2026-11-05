@@ -181,12 +181,10 @@ echo "$*" | grep -q -- --follow && FOLLOW=1 || FOLLOW=0
 count=%d
 m=0
 while [ "$m" -lt "$count" ]; do
-  m=$((m+1))
-  /usr/bin/echo "line-$m"
+	m=$((m+1))
+	/usr/bin/echo "line-$m"
 done
-if [ "$FOLLOW" -eq 1 ]; then
-  exit 0
-fi
+exit 0
 `, n)
 	if err := os.WriteFile(filepath.Join(bin, "docker"), []byte(script), 0700); err != nil {
 		t.Fatal(err)
@@ -600,12 +598,18 @@ func TestServeLogStreamCaseC_DeadlineEndsTerminallyCleanly(t *testing.T) {
 	h := newDeadlineHarness(t)
 	defer h.cancel()
 
+	// Anchor the wait reference before the stream opens. ServeLogStream sets its
+	// ctx deadline from open.DeadlineAt = now+deadline, a hair after we set start
+	// here, so time.Since(start) measures wall-clock from just before the
+	// deadline was established and the terminal StreamEnd always lands at
+	// elapsed >= deadline even under scheduler jitter. A runtime that exits early
+	// lands a full second (or more) before the deadline and is still caught.
+	start := time.Now()
 	open := streamOpen("stream-c", "owned-c", true, deadline)
+	events := openLogs(h, open)
 
 	// Single client reader: net.Pipe has one reader. All observations come from
 	// this one goroutine so no frame is lost to a competing reader.
-	events := openLogs(h, open)
-
 	// Ready must arrive first, proving the follow stream was admitted and the
 	// runtime produced its initial output before the deadline.
 	select {
@@ -621,7 +625,6 @@ func TestServeLogStreamCaseC_DeadlineEndsTerminallyCleanly(t *testing.T) {
 	// StreamEnd that ServeLogStream emits on ctx.Done(). A premature EOF, a
 	// StreamError, or the connection closing without the expected StreamEnd is a
 	// failure: it would mean the follow stream died before its deadline.
-	start := time.Now()
 	end := time.After(deadline + 500*time.Millisecond)
 	for {
 		select {
@@ -634,14 +637,15 @@ func TestServeLogStreamCaseC_DeadlineEndsTerminallyCleanly(t *testing.T) {
 			}
 			if ev.Type == targetaccess.StreamEnd {
 				elapsed := time.Since(start)
-				// The terminal StreamEnd must arrive after the requested
-				// deadline elapsed. ServeLogStream only emits it on ctx.Done at
-				// the deadline; an early EOF would have closed the channel above
-				// instead. Allow a little scheduler jitter before the deadline
-				// (the ctx.Done branch can fire a few ms early) while still
-				// catching any premature end well before the deadline.
-				if elapsed < deadline/2 {
-					t.Fatal("case c: StreamEnd before the requested deadline elapsed (premature end, not a deadline end)")
+				// The terminal StreamEnd must arrive after the FULL requested
+				// deadline elapsed. ServeLogStream emits it on ctx.Done at the
+				// deadline, then writes it over the pipe, so the client sees it a
+				// hair AFTER the deadline. The 1ms jitter margin absorbs scheduler
+				// noise exactly at the boundary without masking a premature end.
+				// Any StreamEnd a full second (or more) before the deadline is the
+				// round-2 reviewer's C-mutant (early runtime EOF) and must fail.
+				if elapsed < deadline-time.Millisecond {
+					t.Fatalf("case c: StreamEnd at %v before the requested deadline %v (premature runtime end, not a deadline end)", elapsed, deadline)
 				}
 				return
 			}
@@ -663,18 +667,81 @@ func TestServeLogStreamCaseC_DeadlineEndsTerminallyCleanly(t *testing.T) {
 // detached it. This version waits for the deterministic server-side signal —
 // the side-effect-free isDetached probe goes inactive — before asserting the
 // stream is no longer held by a ghost transport.
+// resumeOverFreshLine opens a NEW mTLS line (fresh NewHandshakePair server
+// session on the SAME registry-owned TargetAccess) and drives a real resume
+// request with ResumeAfter=after through the production ServeLogStream path. It
+// returns the first event the client observes plus the ServeLogStream error
+// string (empty when ServeLogStream returned nil), exactly as a real client
+// reconnect would see it. This is the discriminator the reviewer's case D needs:
+// a real resume over the wire, not a registry poll.
+func resumeOverFreshLine(t *testing.T, h *streamHarness, streamID string, after uint64) (targetaccess.StreamEvent, string) {
+	t.Helper()
+	h.newServerAndClient(t)
+	// Read the Open on the server side before ServeLogStream spawns its
+	// disconnect goroutine (see openLogsContext), then launch the resume.
+	serverOpenReader := make(chan struct{}, 1)
+	go func() {
+		var o targetaccess.StreamOpen
+		if err := h.server.ReadStreamOpen(&o); err == nil {
+			serverOpenReader <- struct{}{}
+		}
+	}()
+	resumeOpen := streamOpen(streamID, "resume-"+streamID, true, time.Minute)
+	resumeOpen.ResumeAfter = after
+	if err := h.client.WriteStreamOpen(resumeOpen); err != nil {
+		return targetaccess.StreamEvent{}, "write-open failed: " + err.Error()
+	}
+	<-serverOpenReader
+	// The client must read from h.client while ServeLogStream writes to
+	// h.server. Capture the first event the client observes on a dedicated
+	// goroutine so a write into a silent reader never blocks the resume.
+	firstEv := make(chan targetaccess.StreamEvent, 1)
+	readErr := make(chan error, 1)
+	go func() {
+		var ev targetaccess.StreamEvent
+		if err := h.client.ReadStreamEvent(&ev); err != nil {
+			readErr <- err
+			return
+		}
+		firstEv <- ev
+	}()
+	errCh := make(chan error, 1)
+	go func() { errCh <- h.access.ServeLogStream(context.Background(), h.server, resumeOpen) }()
+	select {
+	case ev := <-firstEv:
+		return ev, ""
+	case <-readErr:
+		return targetaccess.StreamEvent{}, ""
+	case err := <-errCh:
+		if err == nil {
+			return targetaccess.StreamEvent{}, ""
+		}
+		return targetaccess.StreamEvent{}, err.Error()
+	}
+}
+
 func TestServeLogStreamCaseD_ClientCancellationLeavesNoGhostSession(t *testing.T) {
-	// Use the deadline harness so the follow stream's runtime subprocess is a
-	// bounded exec child the runner can reap on ctx cancel — a bare
-	// `sleep 3600` would hold the stdout pipe open and block the reader even
-	// after the client disconnects, so no terminal event would ever arrive.
-	h := newDeadlineHarness(t)
+	// A bounded fake that emits 600 distinct lines (> the registry's 512
+	// retention, stream_replay.go:11), so after the follow runs to its own
+	// terminal end the earliest retained sequence is >> 1. That makes a resume at
+	// cursor 1 definitively older than the retained history, so the documented
+	// age-gate rejection is the discriminating, deterministic assertion — the
+	// resume MUST be rejected, never silently replayed.
+	h := newBoundedHarness(t, 600)
 	defer h.cancel()
 
 	open := streamOpen("stream-d", "owned-d", true, time.Minute)
 	events := openLogs(h, open)
 	if ev := <-events; ev.Type != targetaccess.StreamReady {
 		t.Fatalf("expected ready, got %q", ev.Type)
+	}
+	// Drain the full follow to its own terminal end so the registry records every
+	// event and marks the stream closed. Then a client cancel retires it (the
+	// no-ghost guarantee), and a resume over a fresh line must be rejected
+	// because the cancelled stream must not be resurrectable.
+	drained := drainAll(t, events, 20*time.Second)
+	if len(drained) < 600 {
+		t.Fatalf("case d: expected the 600-line bounded follow to run to terminal end, drained %d events", len(drained))
 	}
 
 	// Client aborts: close its end of the real mTLS line. ServeLogStream's
@@ -684,31 +751,49 @@ func TestServeLogStreamCaseD_ClientCancellationLeavesNoGhostSession(t *testing.T
 	// event to the client — the client observes the transport close, not a
 	// StreamEnd. That close is itself the server noticing the cancellation.
 	//
-	// The no-ghost proof is the detach: poll the side-effect-free isDetached
-	// probe until the stream goes inactive. Before detach the stream is
-	// active-and-open; once detach() has run (stream_replay.go:96-102) it is
-	// inactive, and the registry is no longer held by a ghost transport.
+	// The no-ghost proof has TWO parts, in order:
+	//
+	//   1. DETACH — poll the side-effect-free isDetached probe until the stream
+	//      goes inactive (or closed). Before detach the stream is
+	//      active-and-open; once detach() has run (stream_replay.go:96-102) it is
+	//      inactive, and the registry is no longer held by a ghost transport.
+	//   2. RESUME REJECTION — once the cancel has retired the stream, open a
+	//      FRESH mTLS line (a new NewHandshakePair server session on the same
+	//      registry-owned TargetAccess) and drive a real resume request with
+	//      ResumeAfter over the production ServeLogStream path. The 600-line run
+	//      left an earliest retained sequence >> 1, so a resume at cursor 1 is
+	//      older than the retained history and MUST be rejected with the
+	//      documented cursor-expiry reason. This is the discriminator the
+	//      round-2 reviewer's D-mutant needs: a real resume over the wire, not a
+	//      registry poll. If the reject-on-closed behaviour were removed the
+	//      resume would replay the retained events (a ghost) and the test would
+	//      pass — so it must FAIL under that mutation.
 	//
 	// The client close must precede the poll window: the disconnect goroutine
-	// and detach() run asynchronously, so we close first, then let the 200ms
-	// poll window observe the transition — not merely assert it already happened.
+	// and detach() run asynchronously, so we close first, then let the poll
+	// window observe the transition — not merely assert it already happened.
 	deadline := time.After(3 * time.Second)
 	h.closeClient()
 	time.Sleep(200 * time.Millisecond)
-	det, clo := h.access.streams.isDetached("stream-d")
-	if det || clo {
-		return
-	}
 	for {
 		detached, closed := h.access.streams.isDetached("stream-d")
 		if detached || closed {
-			return
+			break
 		}
 		select {
 		case <-deadline:
-			t.Fatalf("case d: stream still attached %d after client cancel — ghost session remained", 3*time.Second)
+			t.Fatalf("case d: stream still attached after 3s client cancel — ghost session remained")
 		case <-time.After(10 * time.Millisecond):
 		}
+	}
+
+	// Cancelled and retired — now prove a real reconnect cannot resurrect it.
+	_, errMsg := resumeOverFreshLine(t, h, "stream-d", 1)
+	if errMsg == "" {
+		t.Fatal("case d: resume over a fresh line was accepted after client cancel — the retired stream was silently replayed (ghost)")
+	}
+	if errMsg != "requested resume cursor is older than retained stream history" {
+		t.Fatalf("case d: resume not rejected with the documented cursor-expiry reason, got %q", errMsg)
 	}
 }
 
