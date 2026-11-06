@@ -2,11 +2,13 @@ package execx
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
 	"os/exec"
 	"strings"
+	"syscall"
 	"time"
 )
 
@@ -95,11 +97,43 @@ func (Runner) Stream(ctx context.Context, env map[string]string, name string, ar
 	go func() {
 		// The ctx deadline ends a follow stream by cancelling the context, which
 		// kills the runtime subprocess (exec.CommandContext). From the reader's
-		// perspective that is a clean end of the log stream, so close the pipe
-		// with io.EOF rather than the kill error: ServeLogStream then emits the
-		// terminal StreamEnd instead of a StreamError.
-		_ = cmd.Wait()
-		_ = writer.CloseWithError(io.EOF)
+		// perspective that is a clean end of the log stream, so a context kill is
+		// mapped to io.EOF: ServeLogStream then emits the terminal StreamEnd
+		// instead of a StreamError. A real child failure, however, must NOT be
+		// hidden as a clean end: its wait error is forwarded so ServeLogStream
+		// emits a StreamError instead.
+		//
+		// exec.CommandContext reaps a still-running child on context
+		// cancellation/deadline with its SIGKILL (after WaitDelay), so cmd.Wait()
+		// returns an *exec.ExitError whose ProcessState was killed by the signal
+		// (syscall.WaitStatus.Signaled() == true) rather than exiting on its own
+		// with a non-zero code. That killed-by-context shape is the only clean
+		// EOF; a non-zero exit the child produced on its own is a genuine
+		// failure and must surface.
+		waitErr := cmd.Wait()
+		if waitErr == nil || isContextKilled(waitErr) {
+			_ = writer.CloseWithError(io.EOF)
+			return
+		}
+		_ = writer.CloseWithError(waitErr)
 	}()
 	return reader, nil
+}
+
+// isContextKilled reports whether err is an *exec.ExitError whose process was
+// reaped by exec.CommandContext's own signal (context cancellation or deadline),
+// as opposed to a child that exited on its own with a non-zero status. A
+// context-killed child is a clean stream end for the caller; a real non-zero
+// exit is a genuine failure that must surface as a stream error.
+func isContextKilled(err error) bool {
+	var exitErr *exec.ExitError
+	if !errors.As(err, &exitErr) {
+		return false
+	}
+	ps := exitErr.ProcessState
+	if ps == nil {
+		return false
+	}
+	ws, ok := ps.Sys().(syscall.WaitStatus)
+	return ok && ws.Signaled()
 }

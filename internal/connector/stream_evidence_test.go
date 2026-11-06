@@ -1723,4 +1723,177 @@ func TestServeLogStreamCaseD_ClientCancellationLeavesNoGhostSession(t *testing.T
 	}
 }
 
+// Round-7 regression (review-22f blocking finding): the executor's Stream must
+// NOT hide a real runtime child failure as a clean stream end. The old code
+// discarded cmd.Wait()'s error and unconditionally closed the pipe with
+// io.EOF, so ServeLogStream — which maps io.EOF to a terminal StreamEnd and any
+// other reader error to StreamError — reported a non-zero-exit subprocess as a
+// normal successful end. This cell proves the fix on the production
+// ServeLogStream path, not by calling the executor helper directly.
+//
+// It installs a fake `docker logs` that prints two lines and then exits 1. The
+// non-zero exit is cmd.Wait()'s real error (never a context cancel — the
+// harness runs it without a deadline that kills the process), so ServeLogStream
+// MUST surface it as a StreamError, never a clean StreamEnd.
+//
+// The converse half proves the cancellation path that JUSTIFIED the old EOF
+// mapping is preserved: a follow that is ended by its ctx deadline (the
+// killable sleep is reaped, a clean EOF) still ends terminally as StreamEnd,
+// never as StreamError.
+//
+// Both directions together prove the fix forwards the real error only for
+// genuine child failures and keeps io.EOF for context cancellation/deadline.
+func TestServeLogStreamCaseE_FailureSurfacesNotEOF_ContextCancelStaysEOF(t *testing.T) {
+	const n = 2
+	// Build a fresh harness whose follow fake exits NON-ZERO after its lines.
+	h := newFailingFollowHarness(t, n)
+	defer h.cancel()
+
+	open := streamOpen("stream-e", "owned-e", true, time.Minute)
+	events := openLogs(h, open)
+	drained := drainAll(t, events)
+	if len(drained) == 0 {
+		t.Fatal("case e: no events observed on a failing follow stream")
+	}
+
+	// The two data lines must have crossed before the terminal frame (the
+	// subprocess prints them, THEN exits non-zero).
+	seenData := 0
+	var terminal targetaccess.StreamEvent
+	hadTerminal := false
+	for _, ev := range drained {
+		if ev.Type == targetaccess.StreamData {
+			seenData++
+		}
+		if ev.Type == targetaccess.StreamError || ev.Type == targetaccess.StreamEnd {
+			terminal = ev
+			hadTerminal = true
+		}
+	}
+	if seenData != n {
+		t.Fatalf("case e: expected %d data frames before the terminal frame, got %d (%#v)", n, seenData, drained)
+	}
+	if !hadTerminal {
+		t.Fatalf("case e: no terminal frame observed (%#v)", drained)
+	}
+	// THE DISCRIMINATOR: the terminal frame MUST be a StreamError, never a
+	// StreamEnd. A StreamEnd here means the child failure was silently mapped
+	// to EOF again (the exact round-6 regression review-22f blocks on).
+	if terminal.Type != targetaccess.StreamError {
+		t.Fatalf("case e: child non-zero exit must surface as StreamError, got terminal type %q (the failure was hidden as a clean StreamEnd/EOF)", terminal.Type)
+	}
+}
+
+// Case E-converse: a follow that ends by its ctx deadline (the killable sleep
+// reaped, a clean EOF) must still terminally end as StreamEnd — the cancellation
+// path that justified the original io.EOF mapping. This mirrors Case C exactly:
+// a hold-fake keeps its stdout pipe open until the Open's deadline fires, then
+// ServeLogStream emits the terminal StreamEnd on ctx.Done. A StreamError here
+// would mean the cancellation EOF mapping regressed.
+//
+// It is the direct converse of the primary Case E: the primary proves a real
+// child failure surfaces as StreamError; this proves a ctx-driven clean EOF ends
+// as StreamEnd. Both directions together prove the fix forwards the real error
+// only for genuine child failures and keeps io.EOF for cancellation.
+func TestServeLogStreamCaseE_Converse_ContextCancelEndsCleanly(t *testing.T) {
+	const n = 2
+	const deadline = 1 * time.Second
+	// Hold the follow pipe open past this deadline: the ctx deadline (via the
+	// Open's DeadlineAt) reaps the killable sleep, delivering a clean EOF.
+	h := newFollowHoldingBoundedHarness(t, n, true)
+	defer h.cancel()
+
+	start := time.Now()
+	open := streamOpen("stream-e2", "owned-e2", true, deadline)
+	events := openLogs(h, open)
+	readyStart := time.Now()
+	for {
+		select {
+		case <-time.After(3 * time.Second):
+			t.Fatal("case e-converse: follow stream never admitted (no ready)")
+		default:
+		}
+		ev, ok := events.next()
+		if !ok {
+			t.Fatal("case e-converse: stream closed before the ready frame (no admission)")
+		}
+		if ev.Type == targetaccess.StreamReady {
+			break
+		}
+		if time.Since(readyStart) > 5*time.Second {
+			t.Fatal("case e-converse: ready never arrived (other frames first)")
+		}
+	}
+
+	// Wait past the requested deadline, then require the terminal StreamEnd.
+	// The primary Case E proves a non-zero-exit child surfaces as StreamError;
+	// this proves a ctx-deadline clean EOF ends as StreamEnd, never StreamError.
+	end := time.After(deadline + 500*time.Millisecond)
+	for {
+		select {
+		case <-end:
+			t.Fatal("case e-converse: deadline elapsed but no expected terminal StreamEnd (follow stream did not end terminally)")
+		default:
+		}
+		ev, ok := events.next()
+		if !ok {
+			t.Fatal("case e-converse: connection closed before the deadline fired (premature EOF / transport close, not a deadline end)")
+		}
+		if ev.Type == targetaccess.StreamError {
+			t.Fatalf("case e-converse: StreamError before the ctx deadline must not happen under the fix (the cancellation EOF mapping regressed): %q", ev.Message)
+		}
+		if ev.Type == targetaccess.StreamEnd {
+			elapsed := time.Since(start)
+			if elapsed < deadline-time.Millisecond {
+				t.Fatalf("case e-converse: StreamEnd at %v before the requested deadline %v (premature runtime end, not a deadline end)", elapsed, deadline)
+			}
+			return
+		}
+	}
+}
+
+// newFailingFollowHarness is like newBoundedHarness but the fake `docker logs`
+// prints its n lines and then exits NON-ZERO (exit 1). It models a runtime log
+// subprocess that terminates with a real failure: from the executor's Stream
+// path cmd.Wait() returns that non-zero error (the harness runs the child under
+// context.Background with no deadline that reaps it), so ServeLogStream must
+// surface it as a StreamError rather than a clean StreamEnd. The two lines are
+// printed before the exit, so a reader still sees the partial output before the
+// terminal error frame — exactly what a real client observes.
+func newFailingFollowHarness(t *testing.T, n int) *streamHarness {
+	t.Helper()
+	fixture := t.TempDir()
+	bin := filepath.Join(fixture, "bin")
+	if err := os.Mkdir(bin, 0700); err != nil {
+		t.Fatal(err)
+	}
+	// Prints n lines, then exits 1. No --follow hold: the non-zero exit is the
+	// whole point, and a ctx.Background() runner never cancels this child.
+	script := fmt.Sprintf(`#!/bin/sh
+echo "$*" | awk '{ $NF="container-000000000000"; printf "%%s\n", $0 }' >> "$BASEHARBOR_TEST_LOG_INVOCATIONS"
+i=0
+while [ "$i" -lt %d ]; do
+	i=$((i+1))
+		/usr/bin/echo "line-$i"
+done
+exit 1
+`, n)
+	if err := os.WriteFile(filepath.Join(bin, "docker"), []byte(script), 0700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	identity := targetaccess.NodeIdentity{TenantID: streamTenant, NodeID: nodeID, TargetID: targetName, Runtime: "docker", Identity: serverID}
+	service := &Service{Runtime: bhruntime.Detection{Kind: bhruntime.Docker}, Capabilities: capability.ForRuntime("docker"), TransportStateRoot: filepath.Join(t.TempDir(), "admission")}
+	service.Observation = container.NewAdapter(bhruntime.Docker)
+	access, err := service.TargetAccess(identity)
+	if err != nil {
+		t.Fatalf("TargetAccess construction failed: %v", err)
+	}
+	pair := targetaccess.NewHandshakePair(t, "BaseHarbor Test CA", serverID, clientID)
+	h := &streamHarness{access: access, pair: pair, invocationLogPath: invocationLogPath(t)}
+	h.newServerAndClient(t)
+	return h
+}
+
 var _ = json.Marshal
