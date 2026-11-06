@@ -62,13 +62,18 @@ func (a *TargetAccess) ServeLogStream(ctx context.Context, session *targetaccess
 	// Quiet follow streams must observe Core disconnect even when the runtime
 	// produces no output. Logs have no inbound frames; any frame also retires
 	// this exclusive connection instead of creating a second control reader.
-	stopClose := context.AfterFunc(ctx, func() { _ = session.Close() })
-	defer stopClose()
+	//
+	// The goroutine only cancels the ctx here; it must NOT call session.Close()
+	// itself, because the ctx cancel fires the read loop's ctx.Done branch
+	// simultaneously, and that branch is the only place that sends the terminal
+	// StreamEnd before the session closes. If the goroutine closed the session
+	// first, the client would see the transport close instead of the terminal
+	// event. The read loop's ctx.Done branch owns the close (after the
+	// StreamEnd), so the client always observes the terminal event.
 	go func() {
 		var unexpected targetaccess.StreamEvent
 		_ = session.ReadStreamEvent(&unexpected)
 		cancel()
-		_ = session.Close()
 	}()
 
 	sequence := uint64(1)
@@ -154,6 +159,7 @@ func (a *TargetAccess) ServeLogStream(ctx context.Context, session *targetaccess
 		case <-ctx.Done():
 			event := streamEvent(open, sequence, targetaccess.StreamEnd, nil, "")
 			_ = send(event)
+			_ = session.Close()
 			return ctx.Err()
 		default:
 		}
