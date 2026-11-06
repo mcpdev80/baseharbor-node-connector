@@ -3,14 +3,17 @@
 package connector
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net"
 	"os"
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -83,23 +86,211 @@ func installFakeDocker(t *testing.T) {
 	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
 }
 
-// streamHarness holds a real TargetAccess and a real mTLS session pair.
+// streamHarness holds a real TargetAccess and a real mTLS session pair. The
+// primary line — the one h.server/h.client are attached to — is tracked in
+// h.primary so the harness teardown can retire it; h.lines tracks the fresh
+// lines that belong to no ServeStream reader (case A's follow/resume lines).
+//
+// cancel() retires lines newest-first and closes their raw endpoints: a parked
+// post-handshake read (a half-open OpenSession goroutine or a disconnect read
+// ServeLogStream left behind) ends at its own line then, instead of delivering
+// a late frame into a LATER iteration's handshake — the cross-wire race that
+// leaked at -count=20.
 type streamHarness struct {
-	access            *TargetAccess
-	pair              *targetaccess.HandshakePair
-	server            *targetaccess.Session
-	client            *targetaccess.Session
-	serverConn        net.Conn
-	clientConn        net.Conn
-	cancels           []context.CancelFunc
+	access     *TargetAccess
+	pair       *targetaccess.HandshakePair
+	server     *targetaccess.Session
+	client     *targetaccess.Session
+	primary    *linePair
+	serverConn net.Conn
+	clientConn net.Conn
+	cancels    []context.CancelFunc
+	// serveQuiescers collect the channels a test closes when one of its live
+	// serves has returned; newLinePair's cleanup backstop waits on them.
+	serveQuiescers    []chan struct{}
+	lines             []*linePair
 	invocationLogPath string
 }
 
-// cancel tears down every live line held by this harness.
+// linePair is one raw, unbuffered mTLS line: the server-side and client-side
+// net.Pipe endpoints of a single fresh transport, plus the retirement signal
+// the harness teardown uses so a parked goroutine on a leaked line cannot race
+// a later line's handshake.
+type linePair struct {
+	serverConn net.Conn
+	clientConn net.Conn
+	retired    atomic.Bool
+}
+
+// retire ends the line: cancel every lifetime that can park a goroutine on it
+// (pass each serve's or session ctx as `cancels`), then close both raw
+// endpoints. The cancel is FIRST and load-bearing: it wakes a serve parked on
+// a nobody-read net.Pipe write (that conn close is an error, not a rendezvous,
+// so the serve can only leave through its ctx), and a serve woken this way
+// emits its terminal StreamEnd while the pipe is still open — session.Close
+// then flushes it to the still-attached reader (the production disconnect
+// shape). Closing the endpoints is the last step so no handshake or parked
+// read survives the close against another line.
+func (line *linePair) retire(cancels ...context.CancelFunc) {
+	if line == nil {
+		return
+	}
+	if line.retired.Swap(true) {
+		return
+	}
+	for _, cancel := range cancels {
+		if cancel != nil {
+			cancel()
+		}
+	}
+	_ = line.serverConn.Close()
+	_ = line.clientConn.Close()
+}
+
+// cancel tears down every live line held by this harness — the primary line and
+// the per-line contexts registered over its lifetime — newest first.
 func (h *streamHarness) cancel() {
 	for _, c := range h.cancels {
 		c()
 	}
+	h.primary.retire()
+	for i := len(h.lines) - 1; i >= 0; i-- {
+		h.lines[i].retire()
+	}
+	h.lines = nil
+}
+
+// newLinePair opens one fresh raw mTLS transport (a net.Pipe line) and
+// registers it with the harness teardown.
+func (h *streamHarness) newLinePair(t *testing.T) *linePair {
+	t.Helper()
+	serverConn, clientConn := net.Pipe()
+	line := &linePair{serverConn: serverConn, clientConn: clientConn}
+	h.lines = append(h.lines, line)
+	// The cleanup runs AFTER every deferred retire in the test body (cleanups
+	// go last in LIFO order), so it is a leaked-line backstop only. Retiring a
+	// line BEFORE the body's own ordering witnesses would close the endpoint
+	// out from under a serve still writing its terminal frame — exactly the
+	// truncation that made an earlier backstop variant of this flake fail the
+	// wire-end assert in ~60s. The backstop therefore waits until every serve
+	// that could hold a parked write on this harness's lines has returned (the
+	// registered quiesce signals), with a bounded grace for a wedged serve —
+	// after the test's own verdict is already recorded.
+	t.Cleanup(func() {
+		for _, quiesced := range h.serveQuiescers {
+			select {
+			case <-quiesced:
+			case <-time.After(20 * time.Second):
+			}
+		}
+		line.retire()
+	})
+	return line
+}
+
+// newSessionPair performs a real mTLS handshake of a fresh server/client
+// session pair on its OWN raw line and returns them, the client endpoint and a
+// retire function. Unlike newServerAndClient it does NOT re-point the harness:
+// callers can hold several live lines at once — a primary follow line plus the
+// fresh line a live resume needs. The registry state lives in the shared
+// TargetAccess, so a session on a new line sees the earlier stream's history: a
+// reconnect over a genuinely fresh transport.
+//
+// A reader hook (clientReader) is NOT used: OpenSession's handshake ends with a
+// session-to-session Hello exchange over a net.Pipe (synchronous, unbuffered),
+// so the FIRST post-handshake read — whoever it belongs to — is already parked
+// in the raw conn's rendez-vous when OpenSession returns. Attaching a client
+// reader before the Open is written would intercept the server's Hello reply;
+// the race review-22d saw on fresh resume lines is gone for that reason, and
+// the helper keeps the proven openLogsContext sequence.
+func newSessionPairLine(t *testing.T, h *streamHarness) (*targetaccess.Session, *targetaccess.Session, net.Conn, *linePair, func()) {
+	t.Helper()
+	line := h.newLinePair(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	h.cancels = append(h.cancels, cancel)
+
+	serverHello := targetaccess.Hello{ContractVersions: []string{targetaccess.ContractVersion}, ProtocolVersions: []string{targetaccess.ProtocolVersion}, Node: targetaccess.NodeIdentity{TenantID: streamTenant, NodeID: nodeID, TargetID: targetName, Runtime: "docker", Identity: serverID}}
+	clientHello := targetaccess.Hello{ContractVersions: []string{targetaccess.ContractVersion}, ProtocolVersions: []string{targetaccess.ProtocolVersion}, Node: targetaccess.NodeIdentity{TenantID: streamTenant, NodeID: "core", TargetID: targetName, Runtime: "docker", Identity: clientID}}
+
+	type outcome struct {
+		sess *targetaccess.Session
+		err  error
+	}
+	serverDone := make(chan outcome, 1)
+	go func() {
+		sess, err := targetaccess.OpenSession(ctx, line.serverConn, targetaccess.TLSServer, targetaccess.TLSFiles{CertificateFile: h.pair.Leaf["server"].CertificateFile, PrivateKeyFile: h.pair.Leaf["server"].PrivateKeyFile, TrustBundleFile: h.pair.Leaf["server"].TrustBundleFile, ExpectedPeerIdentity: clientID}, serverHello, 0)
+		serverDone <- outcome{sess: sess, err: err}
+	}()
+
+	client, err := targetaccess.OpenSession(ctx, line.clientConn, targetaccess.TLSClient, targetaccess.TLSFiles{CertificateFile: h.pair.Leaf["client"].CertificateFile, PrivateKeyFile: h.pair.Leaf["client"].PrivateKeyFile, TrustBundleFile: h.pair.Leaf["client"].TrustBundleFile, ExpectedPeerIdentity: serverID}, clientHello, 0)
+	if err != nil {
+		cancel()
+		line.retire()
+		t.Fatalf("client OpenSession over real mTLS line failed: %v", err)
+	}
+	server := <-serverDone
+	if server.err != nil {
+		cancel()
+		line.retire()
+		t.Fatalf("server OpenSession over real mTLS line failed: %v", server.err)
+	}
+	return server.sess, client, line.clientConn, line, func() {
+		// WAKE-BEFORE-CLOSE, in this order (retire documents why): the cancel
+		// wakes a serve parked on this line — and the session's own ctx, which
+		// its deferred Close owns — so the terminal frame is emitted while the
+		// pipe is still open and the attached readers still take it; only then
+		// does the endpoint close end the parked handshake/wire readers.
+		cancel()
+		line.retire()
+	}
+}
+
+// newSessionPair is newSessionPairLine without the raw line (most callers do
+// not need to attach a wire reader that owns the line's lifetime).
+func newSessionPair(t *testing.T, h *streamHarness) (*targetaccess.Session, *targetaccess.Session, net.Conn, func()) {
+	t.Helper()
+	server, client, clientConn, _, retire := newSessionPairLine(t, h)
+	return server, client, clientConn, retire
+}
+
+// attachLine performs a real mTLS handshake of a fresh server/client session
+// pair onto the given raw line and makes h.server/h.client/h.line point at it.
+// The registry lives in the shared TargetAccess, so a session on a new line sees
+// the earlier stream's history — a reconnect over a genuinely fresh transport.
+func (h *streamHarness) attachLine(t *testing.T, line *linePair) {
+	t.Helper()
+	ctx, cancel := context.WithCancel(context.Background())
+	h.cancels = append(h.cancels, cancel)
+
+	serverHello := targetaccess.Hello{ContractVersions: []string{targetaccess.ContractVersion}, ProtocolVersions: []string{targetaccess.ProtocolVersion}, Node: targetaccess.NodeIdentity{TenantID: streamTenant, NodeID: nodeID, TargetID: targetName, Runtime: "docker", Identity: serverID}}
+	clientHello := targetaccess.Hello{ContractVersions: []string{targetaccess.ContractVersion}, ProtocolVersions: []string{targetaccess.ProtocolVersion}, Node: targetaccess.NodeIdentity{TenantID: streamTenant, NodeID: "core", TargetID: targetName, Runtime: "docker", Identity: clientID}}
+
+	type outcome struct {
+		sess *targetaccess.Session
+		err  error
+	}
+	serverDone := make(chan outcome, 1)
+	go func() {
+		sess, err := targetaccess.OpenSession(ctx, line.serverConn, targetaccess.TLSServer, targetaccess.TLSFiles{CertificateFile: h.pair.Leaf["server"].CertificateFile, PrivateKeyFile: h.pair.Leaf["server"].PrivateKeyFile, TrustBundleFile: h.pair.Leaf["server"].TrustBundleFile, ExpectedPeerIdentity: clientID}, serverHello, 0)
+		serverDone <- outcome{sess: sess, err: err}
+	}()
+
+	client, err := targetaccess.OpenSession(ctx, line.clientConn, targetaccess.TLSClient, targetaccess.TLSFiles{CertificateFile: h.pair.Leaf["client"].CertificateFile, PrivateKeyFile: h.pair.Leaf["client"].PrivateKeyFile, TrustBundleFile: h.pair.Leaf["client"].TrustBundleFile, ExpectedPeerIdentity: serverID}, clientHello, 0)
+	if err != nil {
+		cancel()
+		line.retire()
+		t.Fatalf("client OpenSession over real mTLS line failed: %v", err)
+	}
+	server := <-serverDone
+	if server.err != nil {
+		cancel()
+		line.retire()
+		t.Fatalf("server OpenSession over real mTLS line failed: %v", server.err)
+	}
+	h.server = server.sess
+	h.client = client
+	h.serverConn = line.serverConn
+	h.clientConn = line.clientConn
 }
 
 // newHarness builds a real TargetAccess + real mTLS session pair over a net.Pipe
@@ -192,11 +383,37 @@ fi
 // FIXED absolute id so the process CWD can never leak the per-test resource
 // name into the line-count witness — the CWD drift that review-22a flagged.
 func newBoundedHarness(t *testing.T, n int) *streamHarness {
+	return newFollowHoldingBoundedHarness(t, n, false)
+}
+
+// newFollowHoldingBoundedHarness is newBoundedHarness with an explicit
+// follow-hold gate. When holdFollow is true, a --follow invocation keeps its
+// stdout pipe open (a killable sleep after the n lines) until its own context
+// is cancelled, so the follow stream stays LIVE until something ends it
+// explicitly. Case A needs exactly that: the resume must arrive while the
+// stream is still attached, and what ends the original follow is the explicit
+// end below — never the runtime exiting on its own.
+func newFollowHoldingBoundedHarness(t *testing.T, n int, holdFollow bool) *streamHarness {
 	t.Helper()
 	fixture := t.TempDir()
 	bin := filepath.Join(fixture, "bin")
 	if err := os.Mkdir(bin, 0700); err != nil {
 		t.Fatal(err)
+	}
+	followBlock := "exit 0\n"
+	if holdFollow {
+		followBlock = `if echo " $* " | grep -q -- --follow; then
+  # Follow-hold gate: hold the stdout pipe open after the n lines. exec keeps
+  # sleep a direct child of this shell, so the runner's Setpgid group kill reaps
+  # it and the TERM trap exits the shell 0 — the reader sees a clean EOF only
+  # when its own context is cancelled. The follow stays attached until then,
+  # which is exactly the state the still-attached guard (stream_replay.go:75)
+  # protects.
+  trap 'exit 0' TERM INT
+  exec sleep 3600
+fi
+exit 0
+`
 	}
 	script := fmt.Sprintf(`#!/bin/sh
 echo "$*" | awk '{ $NF="container-000000000000"; printf "%%s\n", $0 }' >> "$BASEHARBOR_TEST_LOG_INVOCATIONS"
@@ -205,8 +422,7 @@ while [ "$i" -lt %d ]; do
 	i=$((i+1))
 		/usr/bin/echo "line-$i"
 done
-exit 0
-`, n)
+%s`, n, followBlock)
 	if err := os.WriteFile(filepath.Join(bin, "docker"), []byte(script), 0700); err != nil {
 		t.Fatal(err)
 	}
@@ -231,38 +447,11 @@ exit 0
 // StreamID, so a second server session sees the first stream's history.
 func (h *streamHarness) newServerAndClient(t *testing.T) {
 	t.Helper()
-	serverConn, clientConn := net.Pipe()
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	h.cancels = append(h.cancels, cancel)
-	t.Cleanup(func() { cancel(); _ = serverConn.Close(); _ = clientConn.Close() })
-
-	serverHello := targetaccess.Hello{ContractVersions: []string{targetaccess.ContractVersion}, ProtocolVersions: []string{targetaccess.ProtocolVersion}, Node: targetaccess.NodeIdentity{TenantID: streamTenant, NodeID: nodeID, TargetID: targetName, Runtime: "docker", Identity: serverID}}
-	clientHello := targetaccess.Hello{ContractVersions: []string{targetaccess.ContractVersion}, ProtocolVersions: []string{targetaccess.ProtocolVersion}, Node: targetaccess.NodeIdentity{TenantID: streamTenant, NodeID: "core", TargetID: targetName, Runtime: "docker", Identity: clientID}}
-
-	type outcome struct {
-		sess *targetaccess.Session
-		err  error
-	}
-	serverDone := make(chan outcome, 1)
-	go func() {
-		sess, err := targetaccess.OpenSession(ctx, serverConn, targetaccess.TLSServer, targetaccess.TLSFiles{CertificateFile: h.pair.Leaf["server"].CertificateFile, PrivateKeyFile: h.pair.Leaf["server"].PrivateKeyFile, TrustBundleFile: h.pair.Leaf["server"].TrustBundleFile, ExpectedPeerIdentity: clientID}, serverHello, 0)
-		serverDone <- outcome{sess: sess, err: err}
-	}()
-
-	client, err := targetaccess.OpenSession(ctx, clientConn, targetaccess.TLSClient, targetaccess.TLSFiles{CertificateFile: h.pair.Leaf["client"].CertificateFile, PrivateKeyFile: h.pair.Leaf["client"].PrivateKeyFile, TrustBundleFile: h.pair.Leaf["client"].TrustBundleFile, ExpectedPeerIdentity: serverID}, clientHello, 0)
-	if err != nil {
-		cancel()
-		t.Fatalf("client OpenSession over real mTLS line failed: %v", err)
-	}
-	server := <-serverDone
-	if server.err != nil {
-		cancel()
-		t.Fatalf("server OpenSession over real mTLS line failed: %v", server.err)
-	}
-	h.server = server.sess
-	h.client = client
-	h.serverConn = serverConn
-	h.clientConn = clientConn
+	line := h.newLinePair(t)
+	h.attachLine(t, line)
+	// attachLine sets the session fields; the line itself is the primary, not
+	// an extra resume line, and h.cancel() retires it along with the extras.
+	h.primary = line
 }
 
 func (h *streamHarness) closeClient() { _ = h.clientConn.Close() }
@@ -365,10 +554,13 @@ type streamFrames struct {
 	all    []targetaccess.StreamEvent
 	done   chan struct{}
 	closed bool
+	// wake is signalled by every append so a parked next() rechecks the queue
+	// without waiting for the close signal.
+	wake chan struct{}
 }
 
 func newStreamFrames() *streamFrames {
-	return &streamFrames{done: make(chan struct{})}
+	return &streamFrames{done: make(chan struct{}), wake: make(chan struct{}, 1)}
 }
 
 func (q *streamFrames) append(ev targetaccess.StreamEvent) {
@@ -379,6 +571,10 @@ func (q *streamFrames) append(ev targetaccess.StreamEvent) {
 	}
 	q.all = append(q.all, ev)
 	q.mu.Unlock()
+	select {
+	case q.wake <- struct{}{}:
+	default:
+	}
 }
 
 func (q *streamFrames) markClosed() {
@@ -392,34 +588,63 @@ func (q *streamFrames) markClosed() {
 
 func (q *streamFrames) awaitClosed() { <-q.done }
 
+// nextWithin is q.next bounded by a wall clock: it returns the next frame and
+// true, or the zero frame and false when the stream closes or the bound elapses
+// first. Nothing in the current cases depends on the bound alone — every
+// timed wait is paired with an outcome assert — but it turns a hung wire into a
+// named failure instead of a runner-wide timeout dump.
+func (q *streamFrames) nextWithin(d time.Duration) (targetaccess.StreamEvent, bool) {
+	res := make(chan struct {
+		ev targetaccess.StreamEvent
+		ok bool
+	}, 1)
+	go func() {
+		ev, ok := q.next()
+		res <- struct {
+			ev targetaccess.StreamEvent
+			ok bool
+		}{ev, ok}
+	}()
+	select {
+	case r := <-res:
+		return r.ev, r.ok
+	case <-time.After(d):
+		return targetaccess.StreamEvent{}, false
+	}
+}
+
 // next blocks until the next frame is available or the stream has closed,
 // returning the frame and true, or the zero frame and false once closed.
 func (q *streamFrames) next() (targetaccess.StreamEvent, bool) {
-	q.mu.Lock()
-	if len(q.all) > 0 {
-		ev := q.all[0]
-		q.all = q.all[1:]
+	for {
+		q.mu.Lock()
+		if len(q.all) > 0 {
+			ev := q.all[0]
+			q.all = q.all[1:]
+			q.mu.Unlock()
+			return ev, true
+		}
+		if q.closed {
+			q.mu.Unlock()
+			return targetaccess.StreamEvent{}, false
+		}
+		done := q.done
+		wake := q.wake
 		q.mu.Unlock()
-		return ev, true
+		// Wait for a frame signal or the close, then LOOP: an append can race
+		// the close signal, and a single check after the wait would drop
+		// exactly the frame the case-B and case-C streaming consumers must
+		// never lose.
+		select {
+		case <-wake:
+		case <-done:
+		}
 	}
-	if q.closed {
-		q.mu.Unlock()
-		return targetaccess.StreamEvent{}, false
-	}
-	q.mu.Unlock()
-	<-q.done
-	q.mu.Lock()
-	if len(q.all) > 0 {
-		ev := q.all[0]
-		q.all = q.all[1:]
-		q.mu.Unlock()
-		return ev, true
-	}
-	q.mu.Unlock()
-	return targetaccess.StreamEvent{}, false
 }
 
-// drainAll returns every captured frame in order. Used by the accounting cases
+// drainAll returns every captured frame in order (it reads the queue under the
+// lock; the streaming readers keep appending, so callers pair it with an
+// explicit end witness). Used by the accounting cases
 // that must see the full event stream: ready, every data frame in sequence
 // order, terminal end.
 func drainAll(t *testing.T, q *streamFrames) []targetaccess.StreamEvent {
@@ -517,8 +742,8 @@ func assertMonotonicSequences(t *testing.T, events []targetaccess.StreamEvent, f
 	if len(events) == 0 {
 		t.Fatal("no events observed")
 	}
-	if events[0].Sequence != firstSeq {
-		t.Fatalf("case replay: first sequence %d want %d", events[0].Sequence, firstSeq)
+	if events[0].Sequence < firstSeq {
+		t.Fatalf("case replay: first sequence %d below the floor %d", events[0].Sequence, firstSeq)
 	}
 	var prev uint64
 	strictlyIncreasing := true
@@ -564,61 +789,426 @@ func payloadLinesOf(events []targetaccess.StreamEvent) []string {
 	return out
 }
 
-// case (a): cursor expiry is documented semantics, not a silent reset.
+// case (a): the STILL-ATTACHED guard and cursor expiry, proven through the real
+// production resume path while the follow stream is LIVE.
 //
 // The registry retains only the last `max` events (default 512,
-// stream_replay.go:11). To drive a REAL retained-history boundary through the
-// production ServeLogStream path, this case makes the fake docker emit 600
-// distinct lines; the production reader produces one StreamData event per line
-// (each line is flushed on its own, so the 16 KiB read buffer yields a frame
-// per line), so the registry stores 601 events (ready + 600 data) and retains
-// the last 512 — i.e. the earliest retained sequence is > 1.
+// stream_replay.go:11). This case runs a 600-line LIVE follow: the follow-hold
+// harness (newFollowHoldingBoundedHarness) keeps the runtime pipe open after the
+// lines (a killable sleep), so nothing ends the stream until something ends it
+// on purpose. Two guard-set members are then asserted, each over its own fresh
+// mTLS line strictly BEFORE the follow's terminal StreamEnd:
 //
-// We then resume at cursor 0 (strictly older than the first retained sequence)
-// and assert the EXACT documented rejection
-// ("requested resume cursor is older than retained stream history",
-// stream_replay.go:81), not merely "some error". Finally we resume at cursor 1
-// (inside retained history) and assert a clean happy-path replay.
+//  1. STILL-ATTACHED GUARD (stream_replay.go:75). A resume that arrives on a
+//     fresh line while a live transport still holds the stream MUST be rejected
+//     with the exact message "stream is still attached to another transport".
+//     Round 5 drained this stream to its terminal StreamEnd first, so the guard
+//     was moot by then and review-22e's guard-removed mutant SURVIVED. Two
+//     guarantees make the resume provably guard-only:
+//     - the barrier: the registry's own begin() state, polled with side-effect
+//     free isDetached until the follow's serve has registered the stream
+//     (active=true) — and the ready frame plus one data frame delivered on the
+//     still-open follow wire, which the harness keeps reading so the serve's
+//     writes never park (net.Pipe rendezvous; the timeout dumps' exact
+//     hang). Frames are stored in the registry BEFORE their wire write
+//     (target_access_stream.go:123-130), so at the resume the retained
+//     window holds the stream's live history and the age gate
+//     (after+1 < first) is false for cursor 300: the cap cannot have evicted
+//     anything;
+//     - with the guard removed, resume() returns the retained replay with no
+//     error and re-attaches the stream, and ServeLogStream proceeds to a
+//     FRESH NON-follow `docker logs` child — an extra invocation the rejection
+//     assert's docker-invocation count reports directly (two lines instead of
+//     one), in addition to the rejection assert, the resume-wire StreamEnd
+//     sweep and the terminal-tail witness below.
+//  2. BEGIN-UNIQUE (stream_replay.go:36-41), the other half of the guard set,
+//     while the follow is STILL live: a non-resume open of the same stream_id
+//     over yet another fresh line MUST be rejected server-side with the exact
+//     message "stream_id is already active" — reachable only while an attached,
+//     non-closed stream holds the id.
+//
+// Only then does the test end the follow (its own ctx is cancelled — the same
+// path its open deadline and Core disconnect take: the killable sleep is
+// reaped, EOF, a terminal StreamEnd on the still-read wire, closed=true in the
+// registry) and runs the PRE-EXISTING cursor-expiry coverage: resume at cursor
+// 1 is older than the retained window (≈ sequence 91 after the 601-event cap)
+// and MUST be rejected with the exact documented message while replaying
+// nothing; resume at cursor 300 (inside the window) replays line-300..line-600
+// in order over the wire, with the -race 1-3 frame loss tolerated by the
+// monotonic-coverage assert (the same artifact round 5 documented).
 func TestServeLogStreamCaseA_CursorExpiryDocumentedSemantics(t *testing.T) {
 	const retainedTrigger = 600 // > defaultStreamReplayEvents (512)
 
-	h := newBoundedHarness(t, retainedTrigger)
+	h := newFollowHoldingBoundedHarness(t, retainedTrigger, true)
 	defer h.cancel()
 
-	open := streamOpen("stream-a", "owned-a", false, time.Minute)
-	q := openLogs(h, open)
-	all := drainAll(t, q)
-	witnessData, _ := os.ReadFile(h.invocationLogPath)
-	t.Logf("case a: witness (first 200 bytes): %q", string(witnessData[:min(200, len(witnessData))]))
-	// ready (seq 1) + 600 data frames (seq 2..601) + terminal end (seq 602).
-	if all[0].Type != targetaccess.StreamReady {
-		t.Fatalf("case a: expected ready first, got %q", all[0].Type)
+	// The follow runs on its OWN line; the live resume runs on a SECOND fresh
+	// line; the TargetAccess registry is shared. newServerAndClient cannot be
+	// used for the follow here: re-pointing h.server at the resume line would
+	// strand the follow's ServeLogStream writes on a line nobody reads, so both
+	// lines are opened explicitly.
+	open := streamOpen("stream-a", "owned-a", true, time.Minute)
+	q := newStreamFrames()
+	// The serve's return is the quiesce signal the per-line cleanup backstop
+	// (newLinePair) waits for before touching a leaked line: no body witness
+	// can then race a teardown close against a serve still mid-write.
+	quiesced := make(chan struct{})
+	h.serveQuiescers = append(h.serveQuiescers, quiesced)
+	followServer, followClient, _, lineFollow, retireFollow := newSessionPairLine(t, h)
+	defer func() {
+		// The deferred retire is an idempotent backstop; the ordering under
+		// proof lives in the body. The wire reader owns the line's normal
+		// shutdown (it closes both endpoints at EOF); the retire here only
+		// covers the failure paths.
+		<-q.done
+		retireFollow()
+	}()
+	go func() {
+		defer q.markClosed()
+		// The reader takes the follow line DOWN with it, in both directions:
+		// EOF here means the wire is done, so closing both raw endpoints wakes
+		// (a) the serve's unexpected-frame reader parked on the server side
+		// and (b) any TLS record half-crossed on the client side. An
+		// un-woken parked reader leaves the serve's terminal frame stuck in
+		// the TLS record layer — the exact hang shape every timeout dump of
+		// this task showed, ~50s into the run at the wire drain below.
+		defer lineFollow.serverConn.Close()
+		defer lineFollow.clientConn.Close()
+		for {
+			var ev targetaccess.StreamEvent
+			if err := followClient.ReadStreamEvent(&ev); err != nil {
+				return
+			}
+			q.append(ev)
+		}
+	}()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	serverOpenReader := make(chan struct{}, 1)
+	go func() {
+		var o targetaccess.StreamOpen
+		if err := followServer.ReadStreamOpen(&o); err == nil {
+			serverOpenReader <- struct{}{}
+		}
+	}()
+	if err := followClient.WriteStreamOpen(open); err != nil {
+		t.Fatalf("case a: writing the follow open failed: %v", err)
 	}
-	// The 600-line capture can lose 1-3 data frames under -race (pre-existing
-	// race-detector artifact on the synchronous net.Pipe). The retained history
-	// (512 events, stream_replay.go:55-56) is still exceeded, so cursor 1 is
-	// rejected below. What MUST hold is that the delivered lines preserve
-	// production order and carry every expected line in order.
-	assertMonotonicSequences(t, all, 1, lineList(retainedTrigger))
-	if last := all[len(all)-1]; last.Type != targetaccess.StreamEnd {
-		t.Fatalf("case a: expected terminal StreamEnd, got %q", last.Type)
+	<-serverOpenReader
+	serveDone := make(chan error, 1)
+	go func() {
+		err := h.access.ServeLogStream(ctx, followServer, open)
+		serveDone <- err
+		close(quiesced)
+	}()
+
+	// BARRE — deterministic attachment proof (registry state and wire events,
+	// never a timed guess): the follow's ServeLogStream is ATTACHED — entered
+	// the registry through begin() (stream_replay.go:42) and NOT yet terminal
+	// (closed=false; the registry marks a stream closed ONLY on a terminal
+	// event, stream_replay.go:58-62) — before any resume is even written.
+	// begin() runs synchronously before ServeLogStream emits its first frame
+	// (target_access_stream.go:82 vs 133), so this poll answers in milliseconds
+	// and cannot pass early. isDetached is the side-effect-free registry probe
+	// (stream_replay.go:100) — unlike a resume() probe it cannot re-attach the
+	// stream and leak state into the witnesses below. An unknown stream also
+	// reads (false, false), so reaching begin() is what turns this green; the
+	// ready/data frames below additionally prove the wire is live and drained.
+	attached := false
+	for attempt := 0; attempt < 150 && !attached; attempt++ {
+		if _, closed := h.access.streams.isDetached("stream-a"); !closed {
+			attached = true
+			break
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	if !attached {
+		t.Fatal("case a: the follow stream never became attached — begin() did not register it, so no guard state existed")
+	}
+	// Drain gate: every frame ServeLogStream writes must be taken from the
+	// wire (net.Pipe rendezvous), so hold the wire open until at least one
+	// DATA frame — actual retained content — has crossed (stream_replay.go:54
+	// stores each frame before the serve's loop continues). A terminal frame
+	// here means the runtime pipe closed — precisely the EOF that ends a stream
+	// — so this gate also proves the stream was live, not already ended, at the
+	// resume. q.next() parks on the event queue, never on a timer.
+	ready, ok := q.next()
+	if !ok || ready.Type != targetaccess.StreamReady {
+		t.Fatalf("case a: expected ready first, got ok=%v type=%q", ok, ready.Type)
+	}
+	var delivered []targetaccess.StreamEvent
+	for len(delivered) < 1 {
+		ev, ok := q.next()
+		if !ok {
+			t.Fatalf("case a: the follow line closed at %d delivered data frames before the live resume — the stream must stay attached", len(delivered))
+		}
+		if ev.Type == targetaccess.StreamData {
+			delivered = append(delivered, ev)
+		} else if ev.Type == targetaccess.StreamError {
+			t.Fatalf("case a: the live follow stream failed before the resume: %q", ev.Message)
+		} else if ev.Type == targetaccess.StreamEnd {
+			t.Fatalf("case a: the follow stream ended (StreamEnd seq %d) before the live resume — the follow-hold gate did not hold, so no still-attached state existed to guard", ev.Sequence)
+		}
 	}
 
-	// Resume at cursor 1: the earliest retained sequence is > 1 (≈91, because
-	// 602 events were produced and only the last 512 are kept), so a resume at
-	// cursor 1 is strictly older than the retained window. The registry only
-	// applies the age gate when after > 0 (stream_replay.go:78), so cursor 1
-	// (not cursor 0) exercises it. This MUST be rejected with the exact
-	// documented message, not merely "some error".
+	// RESUME OVER A FRESH mTLS LINE WHILE THE ORIGINAL IS STILL LIVE. The
+	// resume runs on its OWN second line while the follow keeps line 1, its
+	// reader and its ServeLogStream — nothing here drops, retires or ends the
+	// follow, so the stream is provably attached (active=true, closed=false)
+	// at the resume: exactly the state the guard at stream_replay.go:75
+	// protects. The barrier above already proved attachment through the
+	// registry's own begin(); the drain-gate frames below are the wire's own
+	// retained history — a frame can only cross while the serve holds the
+	// stream and a reader takes it (net.Pipe rendezvous), so every wire park
+	// that the timeout dumps showed (net/pipe.go:159) is closed by this
+	// harness reading its line continuously.
+	// ResumeAfter=300 is inside the retained window: the frames stored so far
+	// have sequences 1..10 and the retention cap (512) cannot have evicted
+	// anything (target_access_stream.go:124 stores BEFORE the wire write), so
+	// the age gate (after+1 < first) is false and the still-attached message is
+	// the ONLY correct answer. With the guard removed, resume() returns an
+	// empty replay with no error and ServeLogStream proceeds to a fresh
+	// NON-follow `docker logs` child — an extra invocation the rejection
+	// assert's docker-invocation count reports directly. Its wire reader
+	// attaches inside the handshake (see newSessionPair), so no frame — not
+	// even a rejection written before ServeLogStream returns — can slip past
+	// it.
+	resumeFrames := newStreamFrames()
+	resumeReaderDone := make(chan struct{})
+	resumeServer, resumeClient, _, retireResume := newSessionPair(t, h)
+	go func() {
+		defer close(resumeReaderDone)
+		defer resumeFrames.markClosed()
+		defer resumeClient.Close() // explicit wire lifetime, see the follow reader
+		for {
+			var ev targetaccess.StreamEvent
+			if err := resumeClient.ReadStreamEvent(&ev); err != nil {
+				return
+			}
+			resumeFrames.append(ev)
+		}
+	}()
+	defer func() {
+		// The resume line must not outlive its reader; retire() is idempotent,
+		// so this is only the failure-path backstop. Retiring it closes its
+		// session, which WAKES a parked follow write (the server's unexpected-
+		// frame reader gets EOF and cancels the follow ctx) — precisely why the
+		// body retires it only AFTER its own wire reader exits and its frames
+		// are drained.
+		<-resumeReaderDone
+		retireResume()
+	}()
+	resumeOpen := streamOpen("stream-a", "resume-stream-a", false, 5*time.Second)
+	resumeOpen.ResumeAfter = 300
+	resumeOpenReader := make(chan struct{}, 1)
+	go func() {
+		var o targetaccess.StreamOpen
+		if err := resumeServer.ReadStreamOpen(&o); err == nil {
+			resumeOpenReader <- struct{}{}
+		}
+	}()
+	if err := resumeClient.WriteStreamOpen(resumeOpen); err != nil {
+		t.Fatalf("case a: writing the live resume open failed: %v", err)
+	}
+	<-resumeOpenReader
+	resumeErrCh := make(chan error, 1)
+	go func() { resumeErrCh <- h.access.ServeLogStream(context.Background(), resumeServer, resumeOpen) }()
+
+	// The resume ran while the follow was STILL ATTACHED: a live, non-closed
+	// stream is what the guard protects, so ServeLogStream must answer the
+	// resume with the exact still-attached message. Guard removed => resume()
+	// attaches and replays the retained data with no error (the cursor is
+	// inside the window): this assert goes RED, named — the mutant proof
+	// review-22e asked for.
+	var serr error
+	select {
+	case serr = <-resumeErrCh:
+	case <-time.After(15 * time.Second):
+		t.Fatal("case a: the live resume neither returned the still-attached rejection nor ended within 15s — the guard did not fire")
+	}
+	if serr == nil || serr.Error() != "stream is still attached to another transport" {
+		var extra string
+		if ferr := <-serveDone; ferr != nil {
+			extra = "; follow serve ended early with " + ferr.Error()
+		} else {
+			extra = "; the follow ended on its own — nothing guarded the resume"
+		}
+		invocations, _ := os.ReadFile(h.invocationLogPath)
+		t.Fatalf("case a: resume over a fresh line while the follow stream is live must be rejected with the exact still-attached message, got %v%s; docker invocations so far: %d", serr, extra, bytes.Count(invocations, []byte("\n")))
+	}
+	rejected := drainAll(t, resumeFrames)
+	for _, ev := range rejected {
+		if ev.Type != targetaccess.StreamError || ev.Message != "stream is still attached to another transport" {
+			t.Fatalf("case a: the resume wire must carry the still-attached rejection, got type=%q message=%q", ev.Type, ev.Message)
+		}
+	}
+	// The follow's ServeLogStream must STILL be running here: the rejection
+	// proves the stream never closed, and an in-flight serve is the attached
+	// state. (The guard-removed mutant instead ends the follow on its own and
+	// is caught by the diagnostic above before this point.)
+	select {
+	case ferr := <-serveDone:
+		t.Fatalf("case a: the follow ServeLogStream ended before the live resume completed (%v) — the resume ran on a closed stream", ferr)
+	default:
+	}
+	// WITNESS 2 — BEGIN-UNIQUE (stream_replay.go:36-41), the other half of the
+	// guard set, while the follow is STILL live: a non-resume open of the same
+	// stream_id over yet another fresh line MUST be rejected server-side with
+	// the exact message "stream_id is already active" — reachable only while an
+	// attached, non-closed stream holds the id. begin() runs BEFORE resume() in
+	// ServeLogStream (target_access_stream.go:82 vs 86), so this rejection is
+	// observed with the stream attached; and the follow's ServeLogStream must
+	// still be running here — a self-end would mean the stream had closed
+	// between the two witnesses, which is impossible while it is attached and
+	// turns this branch red.
+	beginServer, beginClient, _, retireBegin := newSessionPair(t, h)
+	defer retireBegin()
+	beginFrames := newStreamFrames()
+	beginReaderDone := make(chan struct{})
+	go func() {
+		defer close(beginReaderDone)
+		defer beginFrames.markClosed()
+		defer beginClient.Close() // explicit wire lifetime, see the follow reader
+		for {
+			var ev targetaccess.StreamEvent
+			if err := beginClient.ReadStreamEvent(&ev); err != nil {
+				return
+			}
+			beginFrames.append(ev)
+		}
+	}()
+	beginOpen := streamOpen("stream-a", "second-stream-a", false, 5*time.Second)
+	beginOpenReader := make(chan struct{}, 1)
+	go func() {
+		var o targetaccess.StreamOpen
+		if err := beginServer.ReadStreamOpen(&o); err == nil {
+			beginOpenReader <- struct{}{}
+		}
+	}()
+	if err := beginClient.WriteStreamOpen(beginOpen); err != nil {
+		t.Fatalf("case a: writing the second-stream open failed: %v", err)
+	}
+	<-beginOpenReader
+	beginErrCh := make(chan error, 1)
+	go func() { beginErrCh <- h.access.ServeLogStream(context.Background(), beginServer, beginOpen) }()
+	var berr error
+	select {
+	case berr = <-beginErrCh:
+	case <-time.After(15 * time.Second):
+		t.Fatal("case a: the second-stream open neither answered nor stayed silent within its session lifetime")
+	}
+	if berr == nil || berr.Error() != "stream_id is already active" {
+		var ferr0 error
+		live := "follow serve still running (attached)"
+		select {
+		case ferr0 = <-serveDone:
+			live = "follow serve ended early: " + fmt.Sprintf("%v", ferr0)
+		default:
+		}
+		t.Fatalf("case a: a second open of a live stream must be rejected as already active, got %v; %s", berr, live)
+	}
+	select {
+	case <-serveDone:
+		t.Fatal("case a: the follow ended before the second-stream witness — the stream was not attached for both guard branches")
+	default:
+	}
+	<-beginReaderDone
+	retireBegin()
+
+	// THE TERMINAL END — event-driven, and provably drain-safe (the lesson of
+	// this task's three timeout dumps: a ServeLogStream write parks on the
+	// nobody-read net.Pipe line, net/pipe.go:159, and with it the whole serve).
+	// Ordering:
+	//  1. retire the resume and second-stream lines AFTER their wire readers
+	//     have exited and their frames are drained — nothing of theirs is lost
+	//     or misrouted;
+	//  2. read the follow wire to its terminal StreamEnd while its line is
+	//     STILL OPEN and STILL READ by the harness reader — the serve's write
+	//     can always rendezvous, so the end is an observed event, never a
+	//     timer-guess about where it landed;
+	//  3. only then wait for the serve's return. No ctx cancel and no follow
+	//     retire here: an early cancel truncates the retained history BEFORE
+	//     the end (the EOF path wins and the tail loses StreamEnd), and a
+	//     mid-write close drops the frame — the deferred backstops retire the
+	//     line after the body's witnesses have all run.
 	//
-	// Round-5: the assertion is driven THROUGH THE REAL PRODUCTION PATH now —
-	// resumeOverWire opens a fresh imported NewHandshakePair server session on
-	// the SAME registry-owned TargetAccess and drives a real ResumeAfter=1
-	// request through ServeLogStream, which re-sends the retained history over
-	// the wire (target_access_stream.go:86-98). This exercises the full resume
-	// guard set (existence, non-terminal, not-still-attached, age gate) exactly
-	// like cases C/D. Direct replay() registry polls are the round-2 reviewer's
-	// stop criterion and are gone.
+	// This is also the tail the guard-removed mutant cannot produce: without
+	// the guard the ghost resume above already replaced the registry entry and
+	// ended the stream on the RESUME wire, so the follow wire never carries a
+	// StreamEnd after the live witnesses and the drain below goes red, named.
+	<-resumeReaderDone
+	resumeTail := drainAll(t, resumeFrames)
+	retireResume()
+	for _, ev := range resumeTail {
+		if ev.Type == targetaccess.StreamEnd {
+			t.Fatal("case a: the resume wire carries a StreamEnd — with the guard removed this resume ended the live stream, exactly the ghost-attach the card forbids")
+		}
+	}
+	// THE END, on the wire: read the follow's queue until its terminal
+	// StreamEnd arrives — an event, never a timer-guess. The follow holds its
+	// line open with a killable sleep, so the only source of a StreamEnd here
+	// is the serve's own terminal send at its one-minute open deadline (the
+	// same ctx-cancel path case C proves: child reaped, clean EOF, StreamEnd
+	// sent, registry closed=true at stream_replay.go:58-62). If the guard were
+	// missing, the ghost resume above would have ended the stream on the RESUME
+	// wire instead and this drain could only end empty — which is named as such
+	// by the assert below. The harness reader appends before it signals the
+	// close, so the drain also captures a wire that ended without an end.
+	var tail []targetaccess.StreamEvent
+	for {
+		ev, ok := q.next()
+		if !ok {
+			break
+		}
+		tail = append(tail, ev)
+		if ev.Type == targetaccess.StreamEnd {
+			break
+		}
+	}
+	if len(tail) == 0 || lastType(tail) != targetaccess.StreamEnd {
+		var lastt targetaccess.StreamEventType
+		if n := len(tail); n > 0 {
+			lastt = tail[n-1].Type
+		} else {
+			lastt = "<none>"
+		}
+		t.Fatalf("case a: the follow did not end terminally on the wire after the explicit end (last=%v)", lastt)
+	}
+	// The end has crossed; the serve itself returns in one of the documented
+	// legal shapes —
+	//   - nil: EOF reached, the serve sent StreamEnd and returned (150-152);
+	//   - context.Canceled / DeadlineExceeded: the ctx.Done branch emitted the
+	//     same terminal frame before returning ctx.Err() (158-163);
+	//   - a write error: only reachable after an external disconnect closed
+	//     the line while the serve still wrote (not this path).
+	var serveErr error
+	select {
+	case serveErr = <-serveDone:
+	case <-time.After(20 * time.Second):
+		t.Fatal("case a: 20s after its terminal StreamEnd crossed the wire its ServeLogStream had not returned — the end path never completed")
+	}
+	if serveErr != nil && !errors.Is(serveErr, context.DeadlineExceeded) &&
+		!errors.Is(serveErr, context.Canceled) {
+		t.Fatalf("case a: follow ServeLogStream returned a foreign error at its explicit end: %v", serveErr)
+	}
+	lines := payloadLinesOf(tail)
+	if len(lines) < 10 {
+		t.Fatalf("case a: live follow delivered %d lines (first=%q) — expected at least ten lines of retained history", len(lines), firstPayload(lines))
+	}
+	// The follow ended AFTER both live witnesses and with no terminal frame
+	// consumed by either resume: its wire preserves production order and
+	// carries every retained line the -race net.Pipe did not lose. The floor is
+	// 1 (ready); a lost leading frame raises the first delivered sequence, so
+	// strictly-increasing order plus ordered line coverage — not an exact first
+	// index — are what this proves (the artifact round 5 documented).
+	assertMonotonicSequences(t, tail, 1, lineList(retainedTrigger))
+
+	// RESUME AFTER THE TERMINAL END (pre-existing coverage, preserved): cursor 1
+	// is older than the retained window (≈ sequence 91 after the 601-event
+	// retention cap), so it MUST be rejected with the exact documented
+	// cursor-expiry message and replay nothing; cursor 300 is inside the window
+	// and replays line-300..line-600 in order over the wire.
 	replayed, errMsg := resumeOverWire(t, h, "stream-a", 1, time.Minute)
 	if errMsg == "" {
 		t.Fatalf("case a: resume at cursor 1 must be rejected (older than retained history), got nil error over %d wire events", len(replayed))
@@ -630,12 +1220,6 @@ func TestServeLogStreamCaseA_CursorExpiryDocumentedSemantics(t *testing.T) {
 		t.Fatalf("case a: age-gated resume must replay nothing, got %d wire events", len(replayed))
 	}
 
-	// Resume at cursor 300 (inside the retained window: first retained seq ≈91,
-	// so 300 is not < 91) replays the events after it in order over the wire,
-	// each exactly once. The event sequence is offset by the ready frame, so
-	// line-k lives at sequence k+1; events after cursor 300 are line-300..line-600.
-	// The 600-line capture can lose 1-3 frames under -race; assertMonotonic keeps
-	// the order/coverage proof deterministic while tolerating that loss.
 	replayed2, errMsg2 := resumeOverWire(t, h, "stream-a", 300, time.Minute)
 	if errMsg2 != "" {
 		t.Fatalf("case a: in-range wire replay rejected: %v", errMsg2)
@@ -646,24 +1230,28 @@ func TestServeLogStreamCaseA_CursorExpiryDocumentedSemantics(t *testing.T) {
 	if got := replayed2[0].Type; got != targetaccess.StreamData {
 		t.Fatalf("case a: in-range wire replay must begin with data (a resume re-sends retained data, not a ready frame), got %q", got)
 	}
-	// In-range replay over the wire: the retained data frames that arrive after
-	// cursor 300 preserve production order and carry line-300..line-600 in
-	// order (tolerating the -race 1-3 frame loss). The wire resume re-sends the
-	// retained data frames directly (no ready frame), so the strictly-increasing
-	// sequence check starts at the first delivered data frame, not at a fixed
-	// absolute sequence.
 	assertMonotonicSequences(t, replayed2, replayed2[0].Sequence, lineRange(300, retainedTrigger))
-	// The resume re-sends the retained data frames in order. Under -race the
-	// terminal-frame tail of the wire replay can vary (retained StreamEnd, a
-	// fresh fake-docker EOF StreamEnd, or — on a still-active resume — the
-	// fake's fresh lines). What MUST hold is the ordered-coverage proof: the
-	// delivered data frames carry line-300..line-600 in order (tolerating the
-	// -race 1-3 frame loss). assertMonotonicSequences already enforces that.
-	// The terminal-frame tail is not asserted because it is not deterministic
-	// on the wire.
-	if len(replayed2) == 0 {
-		t.Fatal("case a: in-range wire replay produced no events")
+}
+
+// firstPayload is a compact witness for failure messages.
+func firstPayload(lines []string) string {
+	if len(lines) == 0 {
+		return "<none>"
 	}
+	return lines[0]
+}
+
+// hasLine reports whether lines carries want. Under -race the synchronous
+// net.Pipe can lose 1-3 frames between the subprocess stdout and the client
+// reader (the pre-existing artifact cases B/D document), so coverage of the
+// retained history is asserted by membership, not by a fragile first index.
+func hasLine(lines []string, want string) bool {
+	for _, l := range lines {
+		if l == want {
+			return true
+		}
+	}
+	return false
 }
 
 // lineRange returns the expected payload lines "line-start".."line-end" in
@@ -957,12 +1545,28 @@ func resumeOverFreshLine(t *testing.T, h *streamHarness, streamID string, after 
 	}
 }
 
-// resumeOverWire opens a FRESH mTLS line (a new imported NewHandshakePair server
-// session on the SAME registry-owned TargetAccess) and drives a real resume
-// request with ResumeAfter=after through the production ServeLogStream path. It
-// returns every event the client observes over the wire and the server-side
+// resumeOverWire opens a FRESH mTLS line (a new session pair from newSessionPair
+// on the SAME registry-owned TargetAccess) and drives a real resume request
+// with ResumeAfter=after through the production ServeLogStream path. It returns
+// every event the client observes over the wire and the server-side
 // ServeLogStream error string (empty when ServeLogStream returned nil), exactly
 // as a real client reconnect-and-replay would observe it.
+//
+// Wire events are captured from the moment the fresh client session exists —
+// newSessionPair attaches the reader goroutine to the RAW endpoint inside the
+// handshake, so a server-side rejection (for example the age gate or a ghost
+// replay) always lands in `got`, and the helper can never block on a session
+// that errors and closes without an accepted outcome. The resume line is FULLY
+// RETIRED before the helper returns, so no goroutine that reads or writes it can
+// race the next fresh line.
+//
+// The Open is a NON-follow replay (Logs.Follow=false): an in-window resume's
+// ServeLogStream writes its replay frames directly to the wire before any
+// runtime child runs, so its completion is bounded by the replay size, never by
+// the client consume rate. The deadline is an upper bound that an accepted
+// replay of ≤512 frames reaches well inside; the session's write deadline is
+// additionally capped at the session lifetime (session.go:321), so a stalled
+// wire ends the serve with a transport error, not a wedge.
 //
 // This is the discriminator the round-5 reviewer needs for cases A and B: a
 // resume that re-sends the retained history over the wire through
@@ -972,14 +1576,23 @@ func resumeOverFreshLine(t *testing.T, h *streamHarness, streamID string, after 
 // still attached to another transport (stream_replay.go:75), and must satisfy
 // the cursor-expiry age gate (stream_replay.go:78-83). A stale cursor, a dup, a
 // premature end, or a still-attached stream are all caught on the real path.
-//
-// The client reader goroutine is started only AFTER newServerAndClient has fully
-// assigned h.server/h.client (and the reader is drained+exited before
-// resumeOverWire returns), so it never races that field write across the
-// repeated fresh-line reassignments this test makes.
 func resumeOverWire(t *testing.T, h *streamHarness, streamID string, after uint64, deadline time.Duration) ([]targetaccess.StreamEvent, string) {
 	t.Helper()
-	h.newServerAndClient(t)
+	server, client, clientConn, retire := newSessionPair(t, h)
+	h.server, h.client, h.clientConn = server, client, clientConn
+	events := newStreamFrames()
+	readerDone := make(chan struct{})
+	go func() {
+		defer close(readerDone)
+		for {
+			var ev targetaccess.StreamEvent
+			if err := h.client.ReadStreamEvent(&ev); err != nil {
+				events.markClosed()
+				return
+			}
+			events.append(ev)
+		}
+	}()
 	// Read the Open on the server side before ServeLogStream spawns its
 	// disconnect goroutine, exactly as openLogsContext does for the first open.
 	serverOpenReader := make(chan struct{}, 1)
@@ -995,35 +1608,31 @@ func resumeOverWire(t *testing.T, h *streamHarness, streamID string, after uint6
 		return nil, "write-open failed: " + err.Error()
 	}
 	<-serverOpenReader
-	// ServeLogStream owns the server session; its disconnect goroutine reads one
-	// inbound frame, but on a quiet follow there are none, so that goroutine
-	// blocks and the ctx deadline ends the stream by sending the terminal
-	// StreamEnd (now written from inside the read loop, before session.Close).
-	events := newStreamFrames()
 	serverErr := make(chan error, 1)
-	readerDone := make(chan struct{})
 	go func() { serverErr <- h.access.ServeLogStream(context.Background(), h.server, resumeOpen) }()
-	go func() {
-		defer close(readerDone)
-		for {
-			var ev targetaccess.StreamEvent
-			if err := h.client.ReadStreamEvent(&ev); err != nil {
-				events.markClosed()
-				return
-			}
-			events.append(ev)
+	// Wait for the server to finish. The normal path returns in milliseconds —
+	// a replay or a rejection writes and answers; the only way the serve can
+	// block is the wire stalling (the -race synchronous-pipe artifact) or, on a
+	// MUTANT without the guard, a ghost follow stream that never ends. Either
+	// way the serve must not hang the suite: the session's own write deadline
+	// (session.go:321-323, min(5s, expiry)) ends a stalled write in an error.
+	// 30s is that bound with margin; the client close below wakes a write whose
+	// peer vanished.
+	var serr error
+	select {
+	case serr = <-serverErr:
+	case <-time.After(30 * time.Second):
+		_ = h.clientConn.Close()
+		select {
+		case serr = <-serverErr:
+		case <-time.After(10 * time.Second):
+			return drainAll(t, events), "resume did not complete within 40s"
 		}
-	}()
-	// Wait for the server to finish (it writes the retained events over the
-	// wire and then returns for a closed stream, or returns the age-gate /
-	// attach error for a rejected resume), then close the client so the async
-	// reader drains any final frames, observes EOF, and exits. Closing here also
-	// guarantees the reader goroutine is gone before the next resumeOverWire
-	// call reassigns h.client (a live reader would race that write).
-	serr := <-serverErr
+	}
 	_ = h.clientConn.Close()
 	got := drainAll(t, events)
 	<-readerDone // deterministic exit, no sleep-based race window
+	retire()     // the resume line and every goroutine on it are gone
 	if serr == nil {
 		return got, ""
 	}
