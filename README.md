@@ -6,25 +6,11 @@ Optional Target Access Provider implementation for remote non-Kubernetes targets
 
 The Node Connector is **not** a BaseHarbor control plane, not a Runtime Provider and not an autonomous agent.
 
-## BaseHarbor v0.4.26 candidate compatibility
+## BaseHarbor 0.4.27 integration
 
-The final v0.4.26 freeze must pin the exact Core, Demo and Console candidate in
-`integration-candidate.json`. Native enrollment/mTLS, renewal/revocation,
-remote Application lifecycle and the real Console browser journey must pass
-against that matrix before pre-release readiness is claimed. Source tests
-alone are not that acceptance. The current draft retains historical source pins
-until the v0.4.26 Core candidate is fixed.
+Node Connector provides protected remote access to non-Kubernetes runtime hosts. It is not required when a developer workstation connects to a remote BaseHarbor Core: workstation management access and remote runtime enrollment are different paths.
 
-See [Core PR #881](https://github.com/mcpdev80/baseharbor/pull/881) and the release integration records below.
-
-## BaseHarbor v0.4.24 compatibility
-
-The published v0.4.24 baseline completed joint native Docker and rootless Podman acceptance and the full Core pre-release evidence check. Its historical source bindings are recorded in the release integration records; they do not qualify the current v0.4.26 candidate.
-
-The accepted workflows include Core setup, managed Node enrollment, outbound mTLS, renewal/revocation and reconnect, remote application plan/apply/status/doctor/destroy, real Console OIDC/RBAC, events, logs, terminal and credential/CA rotation. Core remains authoritative for state, policy, provider placement and reconciliation. Kubernetes/OpenShift use their native APIs and do not require a Node Connector.
-
-See [Core release status](https://github.com/mcpdev80/baseharbor/pull/837) and the [Core documentation](https://mcpdev80.github.io/baseharbor/). Source tests and preview fixtures remain separate from native integration acceptance.
-
+The Connector keeps its own lifecycle and release version. Exact compatible integration source revisions are tracked in [release integration records](docs/RELEASE-INTEGRATION.md). See the [Core 0.4.27 release notes](https://github.com/mcpdev80/baseharbor/blob/develop/docs/releases/v0.4.27.md) for the overall experience.
 
 ## Boundary
 
