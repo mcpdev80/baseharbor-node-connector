@@ -1,5 +1,8 @@
 # BaseHarbor Node Connector
 
+> **Archived — 14 November 2026.** This repository remains public as a historical snapshot. Active development has stopped; no further releases or updates are planned.
+
+
 See [release integration records](docs/RELEASE-INTEGRATION.md) for immutable source bindings and native acceptance scope.
 
 Optional Target Access Provider implementation for remote non-Kubernetes targets.
